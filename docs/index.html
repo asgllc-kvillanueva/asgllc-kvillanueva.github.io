@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Set up the Downloader · Mac</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0f0f13; --text:#ffffff; --muted:rgba(255,255,255,.6); --faint:rgba(255,255,255,.32);
+    --card:rgba(255,255,255,.05); --line:rgba(255,255,255,.1);
+    --accent:#6c5ce7; --accent2:#00cec9; --pink:#fd79a8;
+    --ok:#55efc4; --err:#ff7675;
+    --term:#15151b;
+    --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+    --sans:'Outfit',system-ui,sans-serif;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    font-family:var(--sans); background:var(--bg); color:var(--text);
+    line-height:1.55; -webkit-font-smoothing:antialiased; position:relative; overflow-x:hidden;
+    padding:clamp(24px,5vw,64px) 20px 80px;
+  }
+  .blobs{position:fixed;inset:0;z-index:-1;overflow:hidden}
+  .blob{position:absolute;border-radius:50%;filter:blur(90px);opacity:.5;animation:float 12s infinite ease-in-out}
+  .b1{width:420px;height:420px;background:#6c5ce7;top:-140px;left:-120px}
+  .b2{width:320px;height:320px;background:#00cec9;bottom:-80px;right:-80px;animation-delay:2.5s}
+  .b3{width:260px;height:260px;background:#fd79a8;top:40%;left:55%;animation-delay:5s}
+  @keyframes float{0%,100%{transform:translate(0,0)}50%{transform:translate(28px,-28px)}}
+
+  .wrap{max-width:680px;margin:0 auto;animation:rise .6s ease both}
+  @keyframes rise{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+
+  .eyebrow{font-size:.78rem;letter-spacing:.16em;text-transform:uppercase;color:var(--accent2);font-weight:600;margin-bottom:14px}
+  h1{font-size:clamp(2rem,6vw,2.9rem);font-weight:700;letter-spacing:-.03em;line-height:1.05;
+     background:linear-gradient(105deg,#fff 30%,#a29bfe);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .lede{color:var(--muted);font-weight:300;font-size:1.08rem;margin-top:14px;max-width:56ch}
+  .lede b{color:var(--text);font-weight:500}
+
+  .modebar{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin:28px 0 6px}
+  .seg{display:inline-flex;background:rgba(0,0,0,.25);border:1px solid var(--line);border-radius:12px;padding:4px}
+  .seg button{font-family:inherit;font-size:.86rem;font-weight:500;color:var(--muted);background:transparent;border:0;
+     padding:9px 16px;border-radius:9px;cursor:pointer;transition:.25s}
+  .seg button[aria-pressed="true"]{background:var(--accent);color:#fff}
+  .progress{font-size:.82rem;color:var(--faint);font-variant-numeric:tabular-nums}
+  .progress b{color:var(--ok)}
+  .methodnote{font-size:.9rem;color:var(--muted);font-weight:300;margin:2px 0 4px;max-width:56ch}
+
+  .steps{margin-top:18px}
+  .group{display:none;flex-direction:column;gap:18px}
+  body[data-method="easy"] .group[data-method="easy"]{display:flex}
+  body[data-method="manual"] .group[data-method="manual"]{display:flex}
+
+  .step{display:grid;grid-template-columns:36px 1fr;gap:18px;position:relative}
+  .step__node{position:relative;display:flex;align-items:flex-start;justify-content:center;padding-top:18px}
+  .dot{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;font-weight:600;font-size:.95rem;
+     background:rgba(255,255,255,.06);border:1px solid var(--line);color:var(--text);transition:.3s;z-index:1}
+  .step:not(:first-child) .step__node::before{content:"";position:absolute;top:-18px;left:50%;transform:translateX(-50%);
+     width:2px;height:36px;background:var(--line);transition:.3s}
+  .step.done .dot{background:linear-gradient(135deg,var(--accent),var(--accent2));border-color:transparent}
+  .step.done .dot .num{display:none}
+  .dot .tick{display:none;font-size:1.05rem}
+  .step.done .dot .tick{display:block}
+  .step.done+.step .step__node::before{background:linear-gradient(var(--accent2),var(--line))}
+
+  .card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:22px 22px 20px;
+     backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)}
+  .step h2{font-size:1.16rem;font-weight:600;letter-spacing:-.01em}
+  .step h2 .tag{color:var(--faint);font-weight:400;font-size:.9rem}
+  .step .why{color:var(--muted);font-weight:300;font-size:.96rem;margin-top:6px}
+  .step .why b{color:var(--text);font-weight:500}
+
+  .file{display:inline-flex;align-items:center;gap:8px;background:rgba(108,92,231,.16);border:1px solid rgba(108,92,231,.4);
+     border-radius:9px;padding:5px 11px;font-weight:500;font-size:.9rem;margin:2px 2px}
+  .file svg{flex-shrink:0}
+
+  .cmd{margin-top:14px;border-radius:12px;overflow:hidden;border:1px solid rgba(255,255,255,.08);background:var(--term)}
+  .cmd__bar{display:flex;align-items:center;gap:8px;padding:9px 12px;background:rgba(255,255,255,.03);border-bottom:1px solid rgba(255,255,255,.06)}
+  .lights{display:flex;gap:6px}
+  .lights span{width:11px;height:11px;border-radius:50%}
+  .lights .r{background:#ff5f57}.lights .y{background:#febc2e}.lights .g{background:#28c840}
+  .cmd__label{font-size:.72rem;color:var(--faint);letter-spacing:.04em;margin-left:4px}
+  .copy{margin-left:auto;font-family:var(--sans);font-size:.74rem;font-weight:600;color:var(--muted);
+     background:rgba(255,255,255,.06);border:1px solid var(--line);border-radius:7px;padding:5px 11px;cursor:pointer;transition:.2s}
+  .copy:hover{color:#fff;background:rgba(255,255,255,.12)}
+  .copy.copied{color:var(--ok);border-color:rgba(85,239,196,.4)}
+  .cmd pre{margin:0;padding:14px 16px;overflow-x:auto}
+  .cmd code{font-family:var(--mono);font-size:.84rem;line-height:1.7;color:#e7e7ef;white-space:pre}
+
+  .expect{display:flex;gap:9px;align-items:flex-start;margin-top:14px;font-size:.9rem;color:var(--muted)}
+  .expect svg{flex-shrink:0;margin-top:2px}
+  .expect b{color:var(--text);font-weight:500}
+
+  .note{margin-top:14px;border-left:3px solid var(--accent2);background:rgba(0,206,201,.07);
+     border-radius:0 10px 10px 0;padding:12px 14px;font-size:.9rem;color:var(--muted);font-weight:300}
+  .note b{color:var(--text);font-weight:600}
+
+  .branch{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
+  .branch button{font-family:inherit;font-size:.84rem;font-weight:500;color:var(--text);background:rgba(255,255,255,.05);
+     border:1px solid var(--line);border-radius:10px;padding:9px 14px;cursor:pointer;transition:.2s}
+  .branch button[aria-pressed="true"]{border-color:var(--accent);background:rgba(108,92,231,.18)}
+  .branchbody{display:none;margin-top:4px}
+  .branchbody.show{display:block;animation:fade .3s ease both}
+  @keyframes fade{from{opacity:0}to{opacity:1}}
+
+  .markdone{margin-top:16px;font-family:inherit;font-size:.82rem;font-weight:600;color:var(--muted);
+     background:transparent;border:1px dashed var(--line);border-radius:9px;padding:8px 14px;cursor:pointer;transition:.2s}
+  .markdone:hover{color:#fff;border-color:var(--faint)}
+  .step.done .markdone{color:var(--ok);border-style:solid;border-color:rgba(85,239,196,.35)}
+
+  .openbtn{display:inline-flex;align-items:center;gap:10px;margin-top:16px;text-decoration:none;
+     font-weight:600;font-size:1rem;color:#fff;background:var(--accent);padding:14px 22px;border-radius:12px;transition:.2s}
+  .openbtn:hover{background:#5649c0;transform:translateY(-2px)}
+
+  code.inline{font-family:var(--mono);font-size:.85em;background:rgba(255,255,255,.08);padding:2px 6px;border-radius:5px;color:#fff}
+
+  .trouble{margin-top:34px}
+  .trouble h3{font-size:.8rem;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin-bottom:12px}
+  .acc{border:1px solid var(--line);border-radius:12px;background:var(--card);margin-bottom:10px;overflow:hidden}
+  .acc summary{list-style:none;cursor:pointer;padding:15px 18px;font-weight:500;font-size:.95rem;display:flex;justify-content:space-between;align-items:center;gap:12px}
+  .acc summary::-webkit-details-marker{display:none}
+  .acc summary .plus{color:var(--accent2);font-size:1.2rem;transition:.2s;flex-shrink:0}
+  .acc[open] summary .plus{transform:rotate(45deg)}
+  .acc .ans{padding:0 18px 16px;color:var(--muted);font-weight:300;font-size:.93rem}
+  .acc .ans code{font-family:var(--mono);font-size:.85em;background:rgba(255,255,255,.08);padding:2px 6px;border-radius:5px;color:#fff}
+
+  footer{margin-top:40px;text-align:center;color:var(--faint);font-size:.8rem}
+
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+  @media (max-width:520px){
+    .step{grid-template-columns:30px 1fr;gap:12px}
+    .dot{width:30px;height:30px;font-size:.85rem}
+    .card{padding:18px}
+  }
+  :focus-visible{outline:2px solid var(--accent2);outline-offset:3px;border-radius:6px}
+</style>
+</head>
+<body data-method="easy">
+<div class="blobs"><div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div></div>
+
+<div class="wrap">
+  <div class="eyebrow">YouTube Downloader · Mac setup</div>
+  <h1>Get the downloader running.</h1>
+  <p class="lede">The easy way is <b>two double-clicks</b>: one to set it up the first time, one to open it whenever you need it. No coding, and nothing to install by hand — it's all bundled. Prefer typing the steps yourself? Switch to Manual.</p>
+
+  <div class="modebar">
+    <div class="seg" role="group" aria-label="Choose how to set up">
+      <button id="m-easy" aria-pressed="true" onclick="setMethod('easy')">Easy · double-click</button>
+      <button id="m-manual" aria-pressed="false" onclick="setMethod('manual')">Manual · Terminal</button>
+    </div>
+    <div class="progress"><b id="pdone">0</b> of <span id="ptotal">3</span> done</div>
+  </div>
+  <p class="methodnote" id="methodnote">No Terminal needed — you'll just double-click two files inside the Downloader folder.</p>
+
+  <div class="steps">
+
+    <!-- ============ EASY ============ -->
+    <div class="group" data-method="easy">
+
+      <section class="step">
+        <div class="step__node"><div class="dot"><span class="num">1</span><span class="tick">✓</span></div></div>
+        <div class="card">
+          <h2>Find the Downloader folder</h2>
+          <p class="why">Put the folder somewhere easy to get to — your <b>Applications</b> or <b>Documents</b> folder is perfect. Open it and you'll see two files you'll use:</p>
+          <div style="margin-top:12px">
+            <span class="file"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#a29bfe" stroke-width="2"><path d="M13 2v7h7"/><path d="M6 2h7l5 5v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/></svg> Setup</span>
+            <span class="file"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#a29bfe" stroke-width="2"><path d="M5 3l14 9-14 9V3z"/></svg> Start Downloader</span>
+          </div>
+          <button class="markdone" onclick="toggleDone(this)">Mark done</button>
+        </div>
+      </section>
+
+      <section class="step">
+        <div class="step__node"><div class="dot"><span class="num">2</span><span class="tick">✓</span></div></div>
+        <div class="card">
+          <h2>Double-click <span class="tag">Setup · once</span></h2>
+          <p class="why">This downloads everything the app needs. A black window opens, prints some text for a minute, and tells you when it's finished. You only ever do this once.</p>
+          <div class="note">
+            <b>First time only:</b> macOS may say it “can't verify the developer.” That's expected for an in-house tool. Instead of double-clicking, <b>right-click the Setup file → Open → Open</b>. After that one time, double-click works normally.
+          </div>
+          <div class="expect">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#55efc4" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg>
+            <span>Wait for <b>“Setup complete.”</b> Then close the window — you're set up for good.</span>
+          </div>
+          <button class="markdone" onclick="toggleDone(this)">Mark done</button>
+        </div>
+      </section>
+
+      <section class="step">
+        <div class="step__node"><div class="dot"><span class="num">3</span><span class="tick">✓</span></div></div>
+        <div class="card">
+          <h2>Double-click <span class="tag">Start Downloader · anytime</span></h2>
+          <p class="why">This is the only thing you do day-to-day. A window opens and your browser pops up with the downloader ready to go. Paste your links and download.</p>
+          <div class="expect">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#55efc4" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg>
+            <span><b>Keep the window open</b> while you work. When you're done, close it to shut the app down.</span>
+          </div>
+          <div class="note">If double-clicking opens the file as <em>text</em> instead of running it, the file lost its “runnable” flag in transit — see “It opened as text” below for the 5-second fix.</div>
+          <button class="markdone" onclick="toggleDone(this)">Mark done</button>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- ============ MANUAL ============ -->
+    <div class="group" data-method="manual">
+
+      <section class="step">
+        <div class="step__node"><div class="dot"><span class="num">1</span><span class="tick">✓</span></div></div>
+        <div class="card">
+          <h2>Open Terminal</h2>
+          <p class="why">Press <b>⌘ Space</b>, type “Terminal”, hit return. A window with a blinking cursor opens — that's where the lines below go.</p>
+          <button class="markdone" onclick="toggleDone(this)">Mark done</button>
+        </div>
+      </section>
+
+      <section class="step">
+        <div class="step__node"><div class="dot"><span class="num">2</span><span class="tick">✓</span></div></div>
+        <div class="card">
+          <h2>Check for Python</h2>
+          <p class="why">Paste this and press return:</p>
+          <div class="cmd">
+            <div class="cmd__bar"><div class="lights"><span class="r"></span><span class="y"></span><span class="g"></span></div><span class="cmd__label">Terminal</span><button class="copy" onclick="copyCmd(this)">Copy</button></div>
+            <pre><code>python3 --version</code></pre>
+          </div>
+          <div class="branch" role="group" aria-label="What did it say?">
+            <button aria-pressed="false" onclick="branch(this,'py-yes')">Showed “Python 3.x.x”</button>
+            <button aria-pressed="false" onclick="branch(this,'py-no')">Said “command not found”</button>
+          </div>
+          <div class="branchbody" id="py-yes">
+            <div class="expect"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#55efc4" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg><span>You're set — go to the next step.</span></div>
+          </div>
+          <div class="branchbody" id="py-no">
+            <p class="why" style="margin-top:12px">Run this, click <b>Install</b> in the popup, wait, then come back:</p>
+            <div class="cmd">
+              <div class="cmd__bar"><div class="lights"><span class="r"></span><span class="y"></span><span class="g"></span></div><span class="cmd__label">Terminal</span><button class="copy" onclick="copyCmd(this)">Copy</button></div>
+              <pre><code>xcode-select --install</code></pre>
+            </div>
+          </div>
+          <button class="markdone" onclick="toggleDone(this)">Mark done</button>
+        </div>
+      </section>
+
+      <section class="step">
+        <div class="step__node"><div class="dot"><span class="num">3</span><span class="tick">✓</span></div></div>
+        <div class="card">
+          <h2>Install the app <span class="tag">· one time</span></h2>
+          <p class="why">Copy the whole block, paste it all at once, press return. It may take a minute and print a lot of text — that's fine.</p>
+          <div class="cmd">
+            <div class="cmd__bar"><div class="lights"><span class="r"></span><span class="y"></span><span class="g"></span></div><span class="cmd__label">Terminal — paste all of this</span><button class="copy" onclick="copyCmd(this)">Copy</button></div>
+            <pre><code>cd ~/Downloads/YouTube_Downloader_Clean_Source
+python3 -m venv venv
+source venv/bin/activate
+python3 -m pip install flask yt-dlp -i https://pypi.org/simple/
+mkdir -p bin
+curl -sL -o ffmpeg.zip https://evermeet.cx/ffmpeg/getrelease/zip
+unzip -q ffmpeg.zip -d bin/
+rm ffmpeg.zip
+chmod +x bin/ffmpeg</code></pre>
+          </div>
+          <div class="expect"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#55efc4" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg><span>When the cursor returns with no red <b style="color:var(--err)">ERROR</b> lines, you're done forever.</span></div>
+          <button class="markdone" onclick="toggleDone(this)">Mark done</button>
+        </div>
+      </section>
+
+      <section class="step">
+        <div class="step__node"><div class="dot"><span class="num">4</span><span class="tick">✓</span></div></div>
+        <div class="card">
+          <h2>Start the app</h2>
+          <p class="why">This is the part you repeat each time. Paste and press return:</p>
+          <div class="cmd">
+            <div class="cmd__bar"><div class="lights"><span class="r"></span><span class="y"></span><span class="g"></span></div><span class="cmd__label">Terminal</span><button class="copy" onclick="copyCmd(this)">Copy</button></div>
+            <pre><code>cd ~/Downloads/YouTube_Downloader_Clean_Source
+source venv/bin/activate
+python3 app.py</code></pre>
+          </div>
+          <div class="expect"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#55efc4" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg><span>It prints a few lines then looks “stuck” — that's the app running. <b>Leave it open.</b></span></div>
+          <button class="markdone" onclick="toggleDone(this)">Mark done</button>
+        </div>
+      </section>
+
+      <section class="step">
+        <div class="step__node"><div class="dot"><span class="num">5</span><span class="tick">✓</span></div></div>
+        <div class="card">
+          <h2>Open the downloader</h2>
+          <p class="why">It usually opens by itself. If not, click below:</p>
+          <a class="openbtn" href="http://127.0.0.1:5001" target="_blank" rel="noopener">Open the downloader
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M7 17L17 7M17 7H8M17 7v9"/></svg></a>
+          <p class="why" style="margin-top:14px;font-size:.86rem">Bookmark <code class="inline">127.0.0.1:5001</code>. Close the Terminal window when you're finished to stop the app.</p>
+          <button class="markdone" onclick="toggleDone(this)">Mark done</button>
+        </div>
+      </section>
+
+    </div>
+  </div>
+
+  <div class="trouble">
+    <h3>If something looks wrong</h3>
+    <details class="acc"><summary>It says it “can't verify the developer” <span class="plus">+</span></summary>
+      <div class="ans">Expected for an in-house tool. Right-click the file → <b>Open</b> → <b>Open</b> (instead of double-clicking). You only do this once per file. If your Mac is locked down by IT and offers no “Open” option, that's a Santa/MDM block — ask IT to allowlist the app, or use the Manual method, which runs through tools already approved on your Mac.</div></details>
+    <details class="acc"><summary>It opened as text instead of running <span class="plus">+</span></summary>
+      <div class="ans">The file lost its “runnable” flag when it was downloaded. Open Terminal, type <code>chmod +x </code> (with the trailing space), then drag the file onto the Terminal window and press return. Double-click works after that. Running <b>Setup</b> this way also re-arms <b>Start Downloader</b> automatically.</div></details>
+    <details class="acc"><summary>It says “pip not found” <span class="plus">+</span></summary>
+      <div class="ans">Use <code>python3 -m pip</code> instead of <code>pip</code>. The Manual block above already does this.</div></details>
+    <details class="acc"><summary>It says “Address already in use” <span class="plus">+</span></summary>
+      <div class="ans">The app is already running from earlier — just open <code>127.0.0.1:5001</code> in your browser. No need to start it again.</div></details>
+    <details class="acc"><summary>A download fails with a “403” error <span class="plus">+</span></summary>
+      <div class="ans">Already handled in this version. If it keeps happening, tell whoever set the app up for you.</div></details>
+  </div>
+
+  <footer>Powered by yt-dlp · runs entirely on your Mac</footer>
+</div>
+
+<script>
+  function setMethod(method){
+    document.body.dataset.method = method;
+    document.getElementById('m-easy').setAttribute('aria-pressed', method==='easy');
+    document.getElementById('m-manual').setAttribute('aria-pressed', method==='manual');
+    document.getElementById('methodnote').textContent = method==='easy'
+      ? 'No Terminal needed — you\u2019ll just double-click two files inside the Downloader folder.'
+      : 'You\u2019ll paste a few short lines into Terminal. This path uses tools already approved on your Mac.';
+    updateProgress();
+  }
+
+  function copyCmd(btn){
+    const code = btn.closest('.cmd').querySelector('code').innerText;
+    const done = ()=>{ btn.textContent='Copied ✓'; btn.classList.add('copied');
+      setTimeout(()=>{ btn.textContent='Copy'; btn.classList.remove('copied'); },1600); };
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(code).then(done).catch(()=>fallbackCopy(code,done));
+    } else { fallbackCopy(code,done); }
+  }
+  function fallbackCopy(text,cb){
+    const ta=document.createElement('textarea'); ta.value=text;
+    ta.style.position='fixed'; ta.style.opacity='0'; document.body.appendChild(ta);
+    ta.select(); try{document.execCommand('copy');}catch(e){} document.body.removeChild(ta); cb();
+  }
+
+  function toggleDone(btn){
+    const step = btn.closest('.step');
+    step.classList.toggle('done');
+    btn.textContent = step.classList.contains('done') ? 'Done ✓' : 'Mark done';
+    updateProgress();
+  }
+
+  function branch(btn,id){
+    btn.parentElement.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed','false'));
+    btn.setAttribute('aria-pressed','true');
+    ['py-yes','py-no'].forEach(x=>document.getElementById(x).classList.remove('show'));
+    document.getElementById(id).classList.add('show');
+  }
+
+  function updateProgress(){
+    const m = document.body.dataset.method;
+    const steps = document.querySelectorAll('.group[data-method="'+m+'"] .step');
+    const done = [...steps].filter(s=>s.classList.contains('done')).length;
+    document.getElementById('pdone').textContent = done;
+    document.getElementById('ptotal').textContent = steps.length;
+  }
+  updateProgress();
+</script>
+</body>
+</html>
