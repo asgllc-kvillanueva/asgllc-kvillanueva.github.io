@@ -39,8 +39,17 @@ def save_settings(settings):
         print(f"Could not save settings: {e}")
 
 # Apply loaded settings
+HOME = os.path.expanduser('~')
 user_settings = load_settings()
-DOWNLOAD_FOLDER = user_settings.get('download_folder', os.path.join(os.path.expanduser('~'), 'Downloads', 'YT_Downloads'))
+DOWNLOAD_FOLDER = user_settings.get('download_folder', os.path.join(HOME, 'Downloads', 'YouTube Downloads'))
+
+# One-click save locations (always writable, no special permissions needed).
+FOLDER_PRESETS = {
+    'desktop': os.path.join(HOME, 'Desktop', 'YouTube Downloads'),
+    'downloads': os.path.join(HOME, 'Downloads', 'YouTube Downloads'),
+    'documents': os.path.join(HOME, 'Documents', 'YouTube Downloads'),
+    'movies': os.path.join(HOME, 'Movies', 'YouTube Downloads'),
+}
 FFMPEG_PATH = "ffmpeg" # Default to system PATH if not frozen
 
 if getattr(sys, 'frozen', False):
@@ -87,7 +96,7 @@ def open_folder_dialog():
 
 @app.route('/')
 def index():
-    return render_template('index.html', current_folder=DOWNLOAD_FOLDER)
+    return render_template('app.html', current_folder=DOWNLOAD_FOLDER)
 
 @app.route('/change-folder', methods=['POST'])
 def change_folder():
@@ -100,6 +109,23 @@ def change_folder():
         save_settings(settings)
         return jsonify({'success': True, 'path': DOWNLOAD_FOLDER})
     return jsonify({'success': False, 'path': DOWNLOAD_FOLDER})
+
+@app.route('/set-folder', methods=['POST'])
+def set_folder():
+    global DOWNLOAD_FOLDER
+    data = request.json or {}
+    target = FOLDER_PRESETS.get(data.get('preset'))
+    if not target:
+        return jsonify({'success': False, 'path': DOWNLOAD_FOLDER, 'error': 'Unknown folder'}), 400
+    try:
+        os.makedirs(target, exist_ok=True)
+    except OSError as e:
+        return jsonify({'success': False, 'path': DOWNLOAD_FOLDER, 'error': str(e)}), 400
+    DOWNLOAD_FOLDER = target
+    settings = load_settings()
+    settings['download_folder'] = DOWNLOAD_FOLDER
+    save_settings(settings)
+    return jsonify({'success': True, 'path': DOWNLOAD_FOLDER})
 
 @app.route('/shutdown', methods=['POST'])
 def shutdown():
