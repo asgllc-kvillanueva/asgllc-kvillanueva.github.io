@@ -27,13 +27,7 @@
             <div class="folder-box">
                 <span class="folder-label">Saving to</span>
                 <div id="currentFolder" class="folder-path">{{ current_folder }}</div>
-                <div class="folder-picks">
-                    <button type="button" class="chip" onclick="setFolder('desktop')">Desktop</button>
-                    <button type="button" class="chip" onclick="setFolder('downloads')">Downloads</button>
-                    <button type="button" class="chip" onclick="setFolder('documents')">Documents</button>
-                    <button type="button" class="chip" onclick="setFolder('movies')">Movies</button>
-                    <button type="button" class="chip browse" onclick="changeFolder()">Choose…</button>
-                </div>
+                <button type="button" class="folder-choose" onclick="changeFolder()">Choose a different folder…</button>
             </div>
 
             <div class="input-group">

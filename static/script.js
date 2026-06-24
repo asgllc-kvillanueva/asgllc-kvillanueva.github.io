@@ -113,7 +113,9 @@ async function changeFolder() {
         const data = await response.json();
 
         if (data.success) {
-            document.getElementById('currentFolder').textContent = `Save to: ${data.path}`;
+            const el = document.getElementById('currentFolder');
+            el.textContent = data.path;
+            el.title = data.path;
         }
     } catch (error) {
         console.error("Failed to change folder:", error);
