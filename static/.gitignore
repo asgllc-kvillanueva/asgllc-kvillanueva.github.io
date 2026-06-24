@@ -1,0 +1,13 @@
+# Created by Setup.command — not committed
+venv/
+bin/
+
+# Python
+__pycache__/
+*.pyc
+
+# App settings written at runtime
+.yt_downloader_settings.json
+
+# macOS
+.DS_Store

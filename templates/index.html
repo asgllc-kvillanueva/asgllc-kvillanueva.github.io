@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Universal Downloader</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <!-- Google Fonts for premium feel -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <div class="background-blobs">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+        <div class="blob blob-3"></div>
+    </div>
+
+    <div class="container">
+        <header>
+            <h1>Universal Downloader</h1>
+            <p>Paste a link from YouTube, Instagram, or TikTok</p>
+        </header>
+
+        <main class="card">
+            <div class="folder-selection">
+                <span id="currentFolder">Save to: {{ current_folder }}</span>
+                <button type="button" id="changeFolderBtn" onclick="changeFolder()" class="icon-btn"
+                    title="Change Folder">
+                    📂
+                </button>
+            </div>
+
+            <div class="input-group">
+                <textarea id="urlInput" placeholder="Paste links here (one per line)..." autocomplete="off"
+                    rows="3"></textarea>
+            </div>
+
+            <div class="options-group">
+                <div class="select-wrapper">
+                    <label for="mediaType">Type</label>
+                    <select id="mediaType">
+                        <option value="video">Video (MP4)</option>
+                        <option value="video_transcript">Video + Transcript</option>
+                        <option value="audio">Audio (MP3)</option>
+                    </select>
+                </div>
+                <div class="select-wrapper">
+                    <label for="mediaQuality">Quality</label>
+                    <select id="mediaQuality">
+                        <option value="best">Best Available</option>
+                        <option value="1080">1080p</option>
+                        <option value="720">720p</option>
+                        <option value="480">480p</option>
+                    </select>
+                </div>
+            </div>
+
+            <button id="downloadBtn" onclick="startDownload()">
+                <span class="btn-text">Download All</span>
+                <div class="loader" id="loader"></div>
+            </button>
+
+            <div id="progressContainer" class="progress-container" style="display: none;">
+                <div class="progress-bar">
+                    <div id="progressFill" class="progress-fill"></div>
+                </div>
+                <div id="progressText" class="progress-text">0%</div>
+            </div>
+
+            <div id="statusMessage" class="status-message"></div>
+            <div id="resultsList" class="results-list"></div>
+        </main>
+
+        <footer>
+            <p>Powered by yt-dlp</p>
+            <button onclick="quitBackend()" class="quit-btn"
+                title="Stop the hidden server running in the background">Quit Backend</button>
+        </footer>
+    </div>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+
+</html>
