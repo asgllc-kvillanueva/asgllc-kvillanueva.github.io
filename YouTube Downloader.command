@@ -11,15 +11,32 @@
 # Run from this file's own folder, wherever it lives.
 cd "$(dirname "$0")" || exit 1
 
-# 1. Need Python 3.
-if ! command -v python3 >/dev/null 2>&1; then
-  echo "Python 3 isn't installed yet."
-  echo "A macOS window will appear — click Install, wait for it to finish,"
-  echo "then open YouTube Downloader again."
-  xcode-select --install 2>/dev/null
+# 1. Need a WORKING Python 3. On a fresh Mac, /usr/bin/python3 is only a stub
+#    that pops Apple's "install the command line developer tools" dialog the
+#    first time it runs. We trigger that, then WAIT and continue on our own.
+if ! python3 -c "" >/dev/null 2>&1; then
+  echo "One-time setup: macOS needs Apple's Command Line Developer Tools."
+  echo "  1. Click Install on the popup that appears"
+  echo "  2. Agree to the license"
   echo
-  read -n 1 -s -r -p "Press any key to close this window."
-  exit 0
+  echo "Leave this window open — it will continue by itself once that finishes."
+  xcode-select --install 2>/dev/null
+  printf "Waiting for the install to finish"
+  tries=0
+  until python3 -c "" >/dev/null 2>&1; do
+    printf "."
+    sleep 5
+    tries=$((tries + 1))
+    if [ "$tries" -ge 360 ]; then
+      echo
+      echo "This is taking a while. Once the tools finish installing,"
+      echo "just double-click YouTube Downloader again."
+      read -n 1 -s -r -p "Press any key to close this window."
+      exit 0
+    fi
+  done
+  echo
+  echo "Python is ready — continuing…"
 fi
 
 # 2. First run only: build the environment and install the app's pieces.
