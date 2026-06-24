@@ -40,7 +40,21 @@
   .lede{color:var(--muted);font-weight:300;font-size:1.08rem;margin-top:14px;max-width:56ch}
   .lede b{color:var(--text);font-weight:500}
 
-  .modebar{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin:28px 0 6px}
+  /* download hero */
+  .download{margin:26px 0 8px;background:linear-gradient(135deg,rgba(108,92,231,.18),rgba(0,206,201,.12));
+     border:1px solid rgba(108,92,231,.38);border-radius:18px;padding:24px}
+  .download h2{font-size:1.2rem;font-weight:600}
+  .download .sub{color:var(--muted);font-weight:300;font-size:.96rem;margin-top:5px}
+  .dlbtn{display:inline-flex;align-items:center;gap:10px;margin-top:18px;text-decoration:none;font-weight:700;
+     font-size:1.04rem;color:#0f0f13;background:linear-gradient(135deg,#a29bfe,#00cec9);padding:15px 26px;border-radius:12px;transition:.2s}
+  .dlbtn:hover{transform:translateY(-2px);filter:brightness(1.06)}
+  .dlmicro{margin-top:18px;display:flex;flex-direction:column;gap:9px}
+  .dlmicro .row{display:flex;gap:11px;align-items:flex-start;font-size:.92rem;color:var(--muted);font-weight:300}
+  .dlmicro b{color:var(--text);font-weight:600}
+  .dlnum{flex-shrink:0;width:21px;height:21px;border-radius:50%;background:rgba(255,255,255,.12);display:grid;place-items:center;font-size:.72rem;font-weight:700;color:#fff;margin-top:1px}
+  .dlwarn{margin-top:14px;font-size:.84rem;color:var(--faint)}
+
+  .modebar{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin:30px 0 6px}
   .seg{display:inline-flex;background:rgba(0,0,0,.25);border:1px solid var(--line);border-radius:12px;padding:4px}
   .seg button{font-family:inherit;font-size:.86rem;font-weight:500;color:var(--muted);background:transparent;border:0;
      padding:9px 16px;border-radius:9px;cursor:pointer;transition:.25s}
@@ -97,6 +111,7 @@
   .note{margin-top:14px;border-left:3px solid var(--accent2);background:rgba(0,206,201,.07);
      border-radius:0 10px 10px 0;padding:12px 14px;font-size:.9rem;color:var(--muted);font-weight:300}
   .note b{color:var(--text);font-weight:600}
+  .note code{font-family:var(--mono);font-size:.85em;background:rgba(255,255,255,.1);padding:2px 6px;border-radius:5px;color:#fff}
 
   .branch{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
   .branch button{font-family:inherit;font-size:.84rem;font-weight:500;color:var(--text);background:rgba(255,255,255,.05);
@@ -133,7 +148,7 @@
   @media (max-width:520px){
     .step{grid-template-columns:30px 1fr;gap:12px}
     .dot{width:30px;height:30px;font-size:.85rem}
-    .card{padding:18px}
+    .card,.download{padding:18px}
   }
   :focus-visible{outline:2px solid var(--accent2);outline-offset:3px;border-radius:6px}
 </style>
@@ -144,7 +159,23 @@
 <div class="wrap">
   <div class="eyebrow">YouTube Downloader · Mac setup</div>
   <h1>Get the downloader running.</h1>
-  <p class="lede">The easy way is <b>two double-clicks</b>: one to set it up the first time, one to open it whenever you need it. No coding, and nothing to install by hand — it's all bundled. Prefer typing the steps yourself? Switch to Manual.</p>
+  <p class="lede">Download it below, then it's <b>two double-clicks</b>: one to set it up the first time, one to open it whenever you need it. No coding, nothing to install by hand.</p>
+
+  <!-- DOWNLOAD -->
+  <div class="download">
+    <h2>1 · Download the app</h2>
+    <p class="sub">The whole thing comes as a single <b>.zip</b>, straight from here.</p>
+    <a class="dlbtn" id="dlbtn" href="#" download>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 3v12m0 0l4-4m-4 4l-4-4M5 21h14"/></svg>
+      Download the app (.zip)
+    </a>
+    <div class="dlmicro">
+      <div class="row"><span class="dlnum">1</span><span>Click the button — a <b>.zip</b> file lands in your Downloads.</span></div>
+      <div class="row"><span class="dlnum">2</span><span><b>Double-click the .zip</b> to unzip it. Drag the folder it creates into <b>Applications</b> or <b>Documents</b> so it's easy to find again.</span></div>
+      <div class="row"><span class="dlnum">3</span><span>Open the folder. You'll see <b>Setup</b> and <b>Start Downloader</b> (plus a few other files you can ignore). Continue below.</span></div>
+    </div>
+    <p class="dlwarn" id="dlwarn"></p>
+  </div>
 
   <div class="modebar">
     <div class="seg" role="group" aria-label="Choose how to set up">
@@ -153,7 +184,7 @@
     </div>
     <div class="progress"><b id="pdone">0</b> of <span id="ptotal">3</span> done</div>
   </div>
-  <p class="methodnote" id="methodnote">No Terminal needed — you'll just double-click two files inside the Downloader folder.</p>
+  <p class="methodnote" id="methodnote">No Terminal needed — you'll just double-click two files inside the folder you downloaded.</p>
 
   <div class="steps">
 
@@ -163,8 +194,8 @@
       <section class="step">
         <div class="step__node"><div class="dot"><span class="num">1</span><span class="tick">✓</span></div></div>
         <div class="card">
-          <h2>Find the Downloader folder</h2>
-          <p class="why">Put the folder somewhere easy to get to — your <b>Applications</b> or <b>Documents</b> folder is perfect. Open it and you'll see two files you'll use:</p>
+          <h2>Open the folder</h2>
+          <p class="why">Open the folder you just unzipped (the one you moved to Applications or Documents). Inside, these are the two files you'll use:</p>
           <div style="margin-top:12px">
             <span class="file"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#a29bfe" stroke-width="2"><path d="M13 2v7h7"/><path d="M6 2h7l5 5v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/></svg> Setup</span>
             <span class="file"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#a29bfe" stroke-width="2"><path d="M5 3l14 9-14 9V3z"/></svg> Start Downloader</span>
@@ -177,7 +208,7 @@
         <div class="step__node"><div class="dot"><span class="num">2</span><span class="tick">✓</span></div></div>
         <div class="card">
           <h2>Double-click <span class="tag">Setup · once</span></h2>
-          <p class="why">This downloads everything the app needs. A black window opens, prints some text for a minute, and tells you when it's finished. You only ever do this once.</p>
+          <p class="why">This downloads everything the app needs. A black window opens, prints text for a minute, then tells you it's finished. You only ever do this once.</p>
           <div class="note">
             <b>First time only:</b> macOS may say it “can't verify the developer.” That's expected for an in-house tool. Instead of double-clicking, <b>right-click the Setup file → Open → Open</b>. After that one time, double-click works normally.
           </div>
@@ -193,12 +224,12 @@
         <div class="step__node"><div class="dot"><span class="num">3</span><span class="tick">✓</span></div></div>
         <div class="card">
           <h2>Double-click <span class="tag">Start Downloader · anytime</span></h2>
-          <p class="why">This is the only thing you do day-to-day. A window opens and your browser pops up with the downloader ready to go. Paste your links and download.</p>
+          <p class="why">This is the only thing you do day-to-day. A window opens and your browser pops up with the downloader ready. Paste your links and download.</p>
           <div class="expect">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#55efc4" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg>
             <span><b>Keep the window open</b> while you work. When you're done, close it to shut the app down.</span>
           </div>
-          <div class="note">If double-clicking opens the file as <em>text</em> instead of running it, the file lost its “runnable” flag in transit — see “It opened as text” below for the 5-second fix.</div>
+          <div class="note">If double-clicking opens the file as <em>text</em> instead of running it, see “It opened as text” below for the quick fix.</div>
           <button class="markdone" onclick="toggleDone(this)">Mark done</button>
         </div>
       </section>
@@ -248,11 +279,14 @@
         <div class="step__node"><div class="dot"><span class="num">3</span><span class="tick">✓</span></div></div>
         <div class="card">
           <h2>Install the app <span class="tag">· one time</span></h2>
-          <p class="why">Copy the whole block, paste it all at once, press return. It may take a minute and print a lot of text — that's fine.</p>
+          <p class="why">First, point Terminal at your folder — this works no matter where it is or what it's called:</p>
+          <div class="note">
+            Type <code>cd</code> followed by a <b>space</b>, then <b>drag the Downloader folder from Finder onto the Terminal window</b> and press return. Terminal is now “inside” your folder.
+          </div>
+          <p class="why" style="margin-top:14px">Then copy this block, paste it all at once, and press return. It may take a minute and print a lot of text — that's fine:</p>
           <div class="cmd">
             <div class="cmd__bar"><div class="lights"><span class="r"></span><span class="y"></span><span class="g"></span></div><span class="cmd__label">Terminal — paste all of this</span><button class="copy" onclick="copyCmd(this)">Copy</button></div>
-            <pre><code>cd ~/Downloads/YouTube_Downloader_Clean_Source
-python3 -m venv venv
+            <pre><code>python3 -m venv venv
 source venv/bin/activate
 python3 -m pip install flask yt-dlp -i https://pypi.org/simple/
 mkdir -p bin
@@ -270,14 +304,13 @@ chmod +x bin/ffmpeg</code></pre>
         <div class="step__node"><div class="dot"><span class="num">4</span><span class="tick">✓</span></div></div>
         <div class="card">
           <h2>Start the app</h2>
-          <p class="why">This is the part you repeat each time. Paste and press return:</p>
+          <p class="why">Point Terminal at the folder again the same way — type <code class="inline">cd</code>, a space, drag the folder in, press return — then paste:</p>
           <div class="cmd">
             <div class="cmd__bar"><div class="lights"><span class="r"></span><span class="y"></span><span class="g"></span></div><span class="cmd__label">Terminal</span><button class="copy" onclick="copyCmd(this)">Copy</button></div>
-            <pre><code>cd ~/Downloads/YouTube_Downloader_Clean_Source
-source venv/bin/activate
+            <pre><code>source venv/bin/activate
 python3 app.py</code></pre>
           </div>
-          <div class="expect"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#55efc4" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg><span>It prints a few lines then looks “stuck” — that's the app running. <b>Leave it open.</b></span></div>
+          <div class="expect"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#55efc4" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg><span>It prints a few lines then looks “stuck” — that's the app running, and your browser opens on its own. <b>Leave it open.</b></span></div>
           <button class="markdone" onclick="toggleDone(this)">Mark done</button>
         </div>
       </section>
@@ -300,9 +333,11 @@ python3 app.py</code></pre>
   <div class="trouble">
     <h3>If something looks wrong</h3>
     <details class="acc"><summary>It says it “can't verify the developer” <span class="plus">+</span></summary>
-      <div class="ans">Expected for an in-house tool. Right-click the file → <b>Open</b> → <b>Open</b> (instead of double-clicking). You only do this once per file. If your Mac is locked down by IT and offers no “Open” option, that's a Santa/MDM block — ask IT to allowlist the app, or use the Manual method, which runs through tools already approved on your Mac.</div></details>
+      <div class="ans">Expected for an in-house tool. Right-click the file → <b>Open</b> → <b>Open</b> (instead of double-clicking). Once per file. If your Mac is locked down by IT and offers no “Open” option, that's a Santa/MDM block — ask IT to allowlist the app, or use the Manual method, which runs through tools already approved on your Mac.</div></details>
     <details class="acc"><summary>It opened as text instead of running <span class="plus">+</span></summary>
-      <div class="ans">The file lost its “runnable” flag when it was downloaded. Open Terminal, type <code>chmod +x </code> (with the trailing space), then drag the file onto the Terminal window and press return. Double-click works after that. Running <b>Setup</b> this way also re-arms <b>Start Downloader</b> automatically.</div></details>
+      <div class="ans">The file lost its “runnable” flag when downloaded. Open Terminal, type <code>chmod +x </code> (with the trailing space), drag the file onto the Terminal window, and press return. Double-click works after that. Running <b>Setup</b> this way also re-arms <b>Start Downloader</b> automatically.</div></details>
+    <details class="acc"><summary>The folder has lots of extra files in it <span class="plus">+</span></summary>
+      <div class="ans">That's normal — the download includes the app plus a few project files. You only ever need <b>Setup</b> and <b>Start Downloader</b>; ignore the rest.</div></details>
     <details class="acc"><summary>It says “pip not found” <span class="plus">+</span></summary>
       <div class="ans">Use <code>python3 -m pip</code> instead of <code>pip</code>. The Manual block above already does this.</div></details>
     <details class="acc"><summary>It says “Address already in use” <span class="plus">+</span></summary>
@@ -315,12 +350,29 @@ python3 app.py</code></pre>
 </div>
 
 <script>
+  // Build the download link from the Pages address: https://USER.github.io/REPO/
+  (function setupDownload(){
+    const btn = document.getElementById('dlbtn');
+    const warn = document.getElementById('dlwarn');
+    const host = location.hostname;
+    const seg = location.pathname.split('/').filter(Boolean);
+    if(host.endsWith('github.io') && seg.length){
+      const user = host.split('.')[0];
+      const repo = seg[0];
+      btn.href = 'https://github.com/' + user + '/' + repo + '/archive/refs/heads/main.zip';
+    } else {
+      // Local preview or custom domain — fill these in by hand.
+      btn.href = 'https://github.com/USERNAME/REPO/archive/refs/heads/main.zip';
+      warn.textContent = 'Preview mode: the download link is a placeholder until this page is live on GitHub Pages.';
+    }
+  })();
+
   function setMethod(method){
     document.body.dataset.method = method;
     document.getElementById('m-easy').setAttribute('aria-pressed', method==='easy');
     document.getElementById('m-manual').setAttribute('aria-pressed', method==='manual');
     document.getElementById('methodnote').textContent = method==='easy'
-      ? 'No Terminal needed — you\u2019ll just double-click two files inside the Downloader folder.'
+      ? 'No Terminal needed — you\u2019ll just double-click two files inside the folder you downloaded.'
       : 'You\u2019ll paste a few short lines into Terminal. This path uses tools already approved on your Mac.';
     updateProgress();
   }
