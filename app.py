@@ -141,19 +141,26 @@ def process_download(job_id, urls, media_type, media_quality, download_folder):
             'preferredquality': '192',
         }]
     else:
-        # Video or Video + Transcript - Enforce avc1 (H.264) codec
-        v_pref = '[vcodec^=avc1]'
-        fallback = '/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best'
-        
-        if media_quality == '1080':
-            ydl_opts_base['format'] = f'bestvideo[height<=1080][ext=mp4]{v_pref}+bestaudio[ext=m4a]{fallback}'
-        elif media_quality == '720':
-            ydl_opts_base['format'] = f'bestvideo[height<=720][ext=mp4]{v_pref}+bestaudio[ext=m4a]{fallback}'
-        elif media_quality == '480':
-            ydl_opts_base['format'] = f'bestvideo[height<=480][ext=mp4]{v_pref}+bestaudio[ext=m4a]{fallback}'
+        # Video / Video + Transcript.
+        # Prefer H.264 mp4 (best QuickTime compatibility) and YouTube-style separate
+        # streams, then fall back to combined single-file sources like TikTok and
+        # Instagram, which serve one progressive file rather than split streams.
+        if media_quality in ('1080', '720', '480'):
+            h = media_quality
+            ydl_opts_base['format'] = (
+                f'bestvideo[height<={h}][ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a]/'
+                f'bestvideo[height<={h}][ext=mp4]+bestaudio[ext=m4a]/'
+                f'bestvideo[height<={h}]+bestaudio/'
+                f'best[height<={h}][ext=mp4]/best[height<={h}]/best'
+            )
         else:
-            ydl_opts_base['format'] = f'bestvideo[ext=mp4]{v_pref}+bestaudio[ext=m4a]{fallback}'
-            
+            ydl_opts_base['format'] = (
+                'bestvideo[ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a]/'
+                'bestvideo[ext=mp4]+bestaudio[ext=m4a]/'
+                'bestvideo+bestaudio/'
+                'best[ext=mp4]/best'
+            )
+
         ydl_opts_base['merge_output_format'] = 'mp4'
         ydl_opts_base['postprocessors'] = [{
             'key': 'FFmpegVideoConvertor',
