@@ -93,6 +93,12 @@
   .shot img{display:block;width:100%;height:auto;border-radius:12px;border:1px solid var(--line);box-shadow:0 8px 24px rgba(0,0,0,.28)}
   .shotcap{margin-top:7px;font-size:.82rem;color:var(--faint)}
   .macbtn{display:inline-block;padding:2px 12px;border-radius:6px;background:linear-gradient(180deg,#fdfdfd,#e9e9eb);color:#1d1d1f;font-size:.9em;font-weight:500;border:1px solid rgba(0,0,0,.2);box-shadow:0 1px 1.5px rgba(0,0,0,.22);line-height:1.5}
+  .substeps{margin:16px 0 0;padding:0;list-style:none;counter-reset:s;display:flex;flex-direction:column;gap:20px}
+  .substeps>li{counter-increment:s;position:relative;padding-left:36px}
+  .substeps>li::before{content:counter(s);position:absolute;left:0;top:-2px;width:26px;height:26px;border-radius:50%;background:rgba(108,92,231,.22);border:1px solid var(--accent);color:#fff;font-size:.82rem;font-weight:600;display:grid;place-items:center}
+  .substeps>li p{margin:3px 0 0;color:var(--muted);font-weight:300;font-size:.96rem}
+  .substeps>li p b{color:var(--text);font-weight:600}
+  .substeps .shot{margin-top:11px}
 
   /* macOS settings mockup */
   .macshot{margin-top:16px;border-radius:14px;overflow:hidden;border:1px solid rgba(255,255,255,.1);background:#1b1b1d}
@@ -184,32 +190,26 @@
         <div class="step__node"><div class="dot">3</div></div>
         <div class="card">
           <h2>Allow it <span class="tag">· once</span></h2>
-          <div class="note">
-            <ol>
-              <li>On the “Apple could not verify…” message, click <b>Done</b>.</li>
-              <li>Open <b>System Settings</b> ( menu → System Settings, or press <b>⌘ Space</b> and type “Privacy”).</li>
-              <li>Go to <b>Privacy &amp; Security</b> and scroll down to <b>Security</b>.</li>
-              <li>Click <b>Open Anyway</b> (circled below), then enter your Mac password.</li>
-            </ol>
-          </div>
-
-          <div class="macshot" role="img" aria-label="The Privacy and Security settings pane, Security section, with an Open Anyway button next to a message that YouTube Downloader was blocked.">
-            <svg viewBox="0 0 640 250" xmlns="http://www.w3.org/2000/svg">
-              <defs><linearGradient id="ob" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#a29bfe"/><stop offset="1" stop-color="#00cec9"/></linearGradient></defs>
-              <rect x="14" y="14" width="612" height="222" rx="16" fill="#232326" stroke="rgba(255,255,255,.12)"/>
-              <circle cx="38" cy="40" r="6" fill="#ff5f57"/><circle cx="58" cy="40" r="6" fill="#febc2e"/><circle cx="78" cy="40" r="6" fill="#28c840"/>
-              <text x="38" y="84" font-family="Outfit,sans-serif" font-size="19" font-weight="600" fill="#fff">Privacy &amp; Security</text>
-              <line x1="38" y1="102" x2="602" y2="102" stroke="rgba(255,255,255,.1)"/>
-              <text x="38" y="134" font-family="Outfit,sans-serif" font-size="12" font-weight="600" letter-spacing="1.5" fill="rgba(255,255,255,.45)">SECURITY</text>
-              <rect x="38" y="148" width="564" height="74" rx="12" fill="rgba(255,255,255,.05)" stroke="rgba(255,255,255,.08)"/>
-              <text x="58" y="182" font-family="Outfit,sans-serif" font-size="14.5" fill="#e9e9ee">“YouTube Downloader” was blocked to</text>
-              <text x="58" y="202" font-family="Outfit,sans-serif" font-size="14.5" fill="#e9e9ee">protect your Mac.</text>
-              <rect x="438" y="166" width="146" height="42" rx="10" fill="url(#ob)"/>
-              <text x="511" y="192" text-anchor="middle" font-family="Outfit,sans-serif" font-size="14.5" font-weight="700" fill="#0f0f13">Open Anyway</text>
-              <rect class="pulsering" x="431" y="159" width="160" height="56" rx="14" fill="none" stroke="#00cec9" stroke-width="2.5"/>
-            </svg>
-          </div>
-          <p class="maccap">This is the screen you're heading to — click the glowing button.</p>
+          <ol class="substeps">
+            <li>
+              <p>Open Spotlight Search by clicking the magnifying glass in the top-right.</p>
+              <figure class="shot">
+                <img src="instructions/3A.webp" alt="The Spotlight magnifying glass in the menu bar" width="800" height="73" loading="lazy">
+              </figure>
+            </li>
+            <li>
+              <p>Type <b>Privacy</b> into the search bar and click the <b>Privacy &amp; Security</b> suggestion. This opens Privacy &amp; Security settings.</p>
+              <figure class="shot">
+                <img src="instructions/3B.webp" alt="Searching Privacy in Spotlight and choosing Privacy & Security" width="800" height="367" loading="lazy">
+              </figure>
+            </li>
+            <li>
+              <p>In <b>Privacy &amp; Security</b>, scroll all the way down to <b>Security</b>. On the prompt “YouTube Downloader.command was blocked to protect your Mac,” click <span class="macbtn">Open Anyway</span>. You'll be prompted once more — click <span class="macbtn">Open Anyway</span> again. If you're asked for your password, enter it.</p>
+              <figure class="shot">
+                <img src="instructions/3C.webp" alt="The Open Anyway button in the Security section" width="800" height="297" loading="lazy">
+              </figure>
+            </li>
+          </ol>
 
           <div class="note">
             <b>As it starts up the first time, you may see one or two more prompts — just allow each:</b>
