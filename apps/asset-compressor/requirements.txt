@@ -1,0 +1,3 @@
+eel
+bottle
+yt-dlp

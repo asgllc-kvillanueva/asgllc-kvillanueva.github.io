@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Asset Compressor</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/15.7.0/nouislider.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="compressor.css">
+</head>
+
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="brand">
+                <h1>Asset Compressor</h1>
+                <p>Optimize & Export Video Assets</p>
+            </div>
+
+            <div class="control-group">
+                <h3>1. Input Source</h3>
+                <button id="btn-browse" class="btn primary">Browse Video (MP4)</button>
+                <div class="yt-divider">— or paste a YouTube link —</div>
+                <div class="yt-input-row">
+                    <input type="text" id="yt-url" class="yt-url-input" placeholder="https://youtube.com/watch?v=…">
+                    <button id="btn-yt-download" class="btn secondary yt-btn">⬇️</button>
+                </div>
+                <div id="yt-status" class="yt-status"></div>
+                <div id="input-filename" class="file-path">No file selected</div>
+            </div>
+
+            <div class="control-group">
+                <h3>2. Compression Settings</h3>
+
+                <div class="input-row">
+                    <label for="fps">Target FPS</label>
+                    <input type="number" id="fps" value="10" min="1" max="60">
+                </div>
+
+                <div class="section-label">WebP</div>
+
+                <div class="input-row">
+                    <label for="webp-quality">Quality (1-100)</label>
+                    <input type="range" id="webp-quality" value="66" min="1" max="100">
+                    <span id="webp-val" class="val-display">66</span>
+                </div>
+
+                <div class="section-label">GIF</div>
+
+                <div class="input-row">
+                    <label for="gif-colors">Colors</label>
+                    <select id="gif-colors">
+                        <option value="1024">High Color (Per-frame)</option>
+                        <option value="256" selected>256 (Max normal)</option>
+                        <option value="128">128</option>
+                        <option value="64">64</option>
+                        <option value="32">32</option>
+                        <option value="16">16</option>
+                    </select>
+                </div>
+
+                <div class="input-row">
+                    <label for="gif-scale">Scale %</label>
+                    <select id="gif-scale">
+                        <option value="100" selected>100% (360×540)</option>
+                        <option value="75">75% (270×406)</option>
+                        <option value="66">66% (240×360)</option>
+                        <option value="50">50% (180×270)</option>
+                    </select>
+                </div>
+
+                <div class="input-row">
+                    <label for="gif-dither">Dither</label>
+                    <select id="gif-dither">
+                        <option value="none" selected>None (Banding, distinct colors)</option>
+                        <option value="sierra2_4a">Sierra (Smooth gradients, default)</option>
+                        <option value="floyd_steinberg">Floyd-Steinberg (Classic grain)</option>
+                        <option value="bayer">Bayer (Retro pattern)</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <h3>3. Output Destination</h3>
+                <button id="btn-output" class="btn secondary">Choose Export Folder</button>
+                <div id="output-foldername" class="file-path">No folder selected</div>
+            </div>
+
+            <div class="control-group">
+                <h3>4. Assets to Export</h3>
+                <label class="checkbox-row"><input type="checkbox" id="chk-webp" checked> WebP (Animated)</label>
+                <label class="checkbox-row"><input type="checkbox" id="chk-gif" checked> GIF (Animated)</label>
+                <label class="checkbox-row"><input type="checkbox" id="chk-mov" checked> MOV (Video)</label>
+                <label class="checkbox-row"><input type="checkbox" id="chk-png" checked> PNG (Static Frame)</label>
+            </div>
+
+            <div class="action-area">
+                <button id="btn-export" class="btn cta" disabled>Export Selected Assets</button>
+                <div id="progress-container" class="progress-container" style="display: none;">
+                    <div class="progress-label" id="progress-label">Starting…</div>
+                    <div class="progress-bar-track">
+                        <div class="progress-bar-fill" id="progress-fill"></div>
+                    </div>
+                </div>
+                <div id="status-message"></div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <div class="preview-header">
+                <h2>Viewport Cropper</h2>
+                <div class="cropper-controls">
+                    <div class="custom-size-group">
+                        <label>Target Size:</label>
+                        <input type="number" id="crop-width" class="size-input" min="10" placeholder="W">
+                        <button id="btn-link-ratio" class="btn-icon active" title="Lock Aspect Ratio">🔗</button>
+                        <input type="number" id="crop-height" class="size-input" min="10" placeholder="H">
+                        <select id="export-scale" class="native-scale-select" title="Output Scale %">
+                            <option value="100">100%</option>
+                            <option value="75">75%</option>
+                            <option value="50">50%</option>
+                            <option value="25">25%</option>
+                        </select>
+                    </div>
+                    <div class="presets-group">
+                        <span class="preset-label">Presets:</span>
+                        <button id="preset-native" class="btn-toggle active" title="Original Video Size">Native</button>
+                        <button id="preset-motion" class="btn-toggle" title="360x540">Motion</button>
+                        <button id="preset-static" class="btn-toggle" title="682x1024">Static</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="cropper-wrapper">
+                <div id="crop-container" class="crop-container">
+                    <video id="source-video" src="" loop muted playsinline></video>
+                </div>
+                <div class="crop-instructions">
+                    Scroll to Zoom • Click & Drag to Pan
+                </div>
+            </div>
+
+            <div class="timeline-controls">
+                <div class="timeline-header">
+                    <h3>Timeline Selection</h3>
+                    <div class="time-display">
+                        <input type="number" id="time-in" class="time-input" step="0.01" min="0" value="0.00">s -
+                        <input type="number" id="time-out" class="time-input" step="0.01" min="0" value="0.00">s
+                        <span class="duration" id="time-duration">(0.00s)</span>
+                    </div>
+                </div>
+
+                <div class="timeline-wrapper">
+                    <div id="timeline-slider"></div>
+                </div>
+
+                <div class="playback-controls">
+                    <button id="btn-play-pause" class="btn icon-btn">▶ Play</button>
+                    <div class="static-frame-control">
+                        <button id="btn-capture-frame" class="btn outline">📸 Capture PNG Now</button>
+                        <span id="static-frame-time">Not set</span>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script type="text/javascript" src="/eel.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/15.7.0/nouislider.min.js"></script>
+    <script src="compressor.js"></script>
+</body>
+
+</html>
