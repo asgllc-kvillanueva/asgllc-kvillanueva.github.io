@@ -1,3 +1,2 @@
-eel
-bottle
+flask
 yt-dlp

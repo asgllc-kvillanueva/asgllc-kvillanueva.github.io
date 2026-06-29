@@ -623,3 +623,76 @@ body {
     font-size: 13px;
     color: var(--success);
 }
+/* ─── Multi-file input ─────────────────────────────────────────── */
+.input-hint {
+    font-size: 11.5px;
+    color: var(--text-muted);
+    line-height: 1.5;
+    margin: 8px 0 4px;
+}
+.input-hint b { color: var(--text-main); font-weight: 600; }
+
+.file-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 8px;
+}
+.file-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background-color: var(--bg-dark);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 6px 8px;
+    font-size: 12px;
+}
+.file-item.active {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 1px var(--primary) inset;
+}
+.file-item__name {
+    flex: 1;
+    color: var(--text-main);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: pointer;
+}
+.file-item__x {
+    flex-shrink: 0;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 2px;
+}
+.file-item__x:hover { color: var(--danger); }
+
+.file-empty {
+    margin-top: 8px;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+.btn-clear {
+    margin-top: 8px;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-family: inherit;
+    font-size: 12px;
+    cursor: pointer;
+    text-decoration: underline;
+    padding: 2px 0;
+}
+.btn-clear:hover { color: var(--danger); }
+
+.preview-name {
+    font-size: 13px;
+    font-weight: 400;
+    color: var(--text-muted);
+    margin-left: 6px;
+}

@@ -1,146 +1,31 @@
-import eel
 import os
-import subprocess
-import json
-import bottle
-import threading
-import tempfile
-import glob
-import shutil
 import re
+import json
+import glob
+import queue
+import tempfile
+import threading
+import subprocess
+import webbrowser
 
-# Initialize Eel
-eel.init('web')
+from flask import Flask, render_template, request, jsonify, Response, send_file
 
-# ─── Video Serving ───────────────────────────────────────────────────────
-_current_video_path = None
-_serve_port = 8089
+app = Flask(__name__)
+PORT = 5002
 
-video_app = bottle.Bottle()
+# ffmpeg is on PATH (the hub puts the shared bin/ directory there).
+FFMPEG = "ffmpeg"
 
-@video_app.route('/stream')
-def stream_video():
-    if not _current_video_path or not os.path.isfile(_current_video_path):
-        bottle.abort(404, "No video loaded")
-    return bottle.static_file(
-        os.path.basename(_current_video_path),
-        root=os.path.dirname(_current_video_path),
-        mimetype='video/mp4'
-    )
+# Human-readable list of what you can load (shown in the UI).
+ALLOWED_DESC = "MP4, MOV, M4V, WebM, AVI, and more"
 
-def _start_video_server():
-    video_app.run(host='127.0.0.1', port=_serve_port, quiet=True)
+# Server-side state. Single user, single window.
+SELECTED = []          # list of absolute video paths
+OUTPUT_DIR = None
+progress_q = queue.Queue()
 
-# ─── Native macOS File Dialogs ───────────────────────────────────────────
-
-@eel.expose
-def select_video():
-    global _current_video_path
-    script = '''
-    set theFile to choose file with prompt "Select Video File" of type {"com.apple.quicktime-movie", "public.mpeg-4", "public.movie"}
-    return POSIX path of theFile
-    '''
-    result = subprocess.run(['osascript', '-e', script], capture_output=True, text=True)
-    if result.returncode == 0:
-        path = result.stdout.strip()
-        _current_video_path = path
-        return path
-    return None
-
-@eel.expose
-def select_output_folder():
-    script = '''
-    set theFolder to choose folder with prompt "Select Output Folder"
-    return POSIX path of theFolder
-    '''
-    result = subprocess.run(['osascript', '-e', script], capture_output=True, text=True)
-    if result.returncode == 0:
-        return result.stdout.strip()
-    return None
-
-@eel.expose
-def get_video_serve_url():
-    return f'http://127.0.0.1:{_serve_port}/stream'
-
-# ─── YouTube Download via yt-dlp ─────────────────────────────────────────
-
-@eel.expose
-def download_youtube(url):
-    global _current_video_path
-    try:
-        # Check yt-dlp exists
-        if not shutil.which('yt-dlp'):
-            return {"success": False, "error": "yt-dlp not found. Install via: brew install yt-dlp"}
-
-        # Create a persistent temp directory for downloads
-        dl_dir = os.path.join(tempfile.gettempdir(), 'asset_comp_yt')
-        os.makedirs(dl_dir, exist_ok=True)
-
-        eel.update_yt_status("⏳ Fetching video info…")()
-
-        # Get the video title first for display
-        title_cmd = ['yt-dlp', '--print', 'title', '--no-warnings', url]
-        title_result = subprocess.run(title_cmd, capture_output=True, text=True, timeout=30)
-        video_title = title_result.stdout.strip() or "youtube_video"
-
-        # Clean filename
-        safe_title = re.sub(r'[^\w\s-]', '', video_title)[:60].strip()
-
-        eel.update_yt_status(f"⬇️ Downloading: {safe_title}…")()
-
-        output_template = os.path.join(dl_dir, f'{safe_title}.%(ext)s')
-
-        # Download best mp4 (h264) video+audio merged
-        cmd = [
-            'yt-dlp',
-            '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-            '--merge-output-format', 'mp4',
-            '-o', output_template,
-            '--no-playlist',
-            '--no-warnings',
-            url
-        ]
-
-        process = subprocess.Popen(
-            cmd, stderr=subprocess.PIPE, stdout=subprocess.PIPE,
-            universal_newlines=True, bufsize=1
-        )
-
-        # Read stdout for download progress
-        for line in process.stdout:
-            line = line.strip()
-            if '[download]' in line and '%' in line:
-                eel.update_yt_status(f"⬇️ {line}")()
-
-        process.wait()
-
-        if process.returncode != 0:
-            stderr = process.stderr.read() if process.stderr else ""
-            return {"success": False, "error": f"yt-dlp failed: {stderr[:200]}"}
-
-        # Find the downloaded file
-        downloaded = glob.glob(os.path.join(dl_dir, f'{safe_title}.*'))
-        mp4_files = [f for f in downloaded if f.endswith('.mp4')]
-
-        if not mp4_files:
-            return {"success": False, "error": "Download completed but no MP4 file found."}
-
-        dl_path = mp4_files[0]
-        _current_video_path = dl_path
-
-        return {
-            "success": True,
-            "path": dl_path,
-            "title": safe_title
-        }
-
-    except subprocess.TimeoutExpired:
-        return {"success": False, "error": "Download timed out."}
-    except Exception as e:
-        return {"success": False, "error": str(e)}
 
 # ─── Helpers ─────────────────────────────────────────────────────────────
-
 def _next_version(filepath):
     base, ext = os.path.splitext(filepath)
     v = 1
@@ -150,312 +35,311 @@ def _next_version(filepath):
             return candidate
         v += 1
 
+
 def _has_libwebp():
-    result = subprocess.run(['ffmpeg', '-encoders'], capture_output=True, text=True)
-    return 'libwebp' in result.stdout
+    try:
+        r = subprocess.run([FFMPEG, "-hide_banner", "-encoders"],
+                           capture_output=True, text=True)
+        return "libwebp" in r.stdout
+    except Exception:
+        return False
 
-def _run_ffmpeg_with_progress(cmd, duration_sec, step_num, total_steps, label):
-    """
-    Run an FFmpeg command via Popen, parse stderr in real-time for
-    time= progress, and push percentage updates to the JS frontend.
-    """
-    process = subprocess.Popen(
-        cmd, stderr=subprocess.PIPE, stdout=subprocess.PIPE,
-        universal_newlines=True, bufsize=1
-    )
 
-    # FFmpeg writes progress to stderr in lines like:
-    #   frame=   45 fps= 30 ... time=00:00:03.00 ...
-    # We parse out the time= value and compare to total duration.
-    time_pattern = re.compile(r'time=(\d+):(\d+):(\d+\.\d+)')
-    stderr_lines = []
-
+def _ffmpeg_with_progress(cmd, duration_sec, on_pct):
+    """Run ffmpeg, parse time= from stderr, call on_pct(fraction 0..1)."""
+    process = subprocess.Popen(cmd, stderr=subprocess.PIPE, stdout=subprocess.PIPE,
+                               universal_newlines=True, bufsize=1)
+    time_re = re.compile(r'time=(\d+):(\d+):(\d+\.\d+)')
+    errbuf = []
     for line in process.stderr:
-        stderr_lines.append(line)
-        match = time_pattern.search(line)
-        if match:
-            h, m, s = int(match.group(1)), int(match.group(2)), float(match.group(3))
-            current_time = h * 3600 + m * 60 + s
-            if duration_sec > 0:
-                pct = min(current_time / duration_sec, 1.0)
-                eel.update_progress(step_num, total_steps, f'{label} — {pct*100:.0f}%')()
-
+        errbuf.append(line)
+        m = time_re.search(line)
+        if m and duration_sec > 0:
+            h, mn, s = int(m.group(1)), int(m.group(2)), float(m.group(3))
+            cur = h * 3600 + mn * 60 + s
+            on_pct(min(cur / duration_sec, 1.0))
     process.wait()
-    return process.returncode, "".join(stderr_lines)
+    return process.returncode, "".join(errbuf)
 
-def _generate_webp_via_img2webp(input_file, t_in, t_out, crop_w, crop_h, crop_x, crop_y,
-                                 fps, quality, output_path, step_num, total_steps):
-    """
-    Generate animated WebP via frame extraction + img2webp.
-    Uses -lossy and -m 4 (good balance of speed vs compression).
-    Shows frame extraction progress.
-    """
-    tmpdir = tempfile.mkdtemp(prefix='asset_comp_')
-    duration = t_out - t_in
+
+def _even(n):
+    n = int(n)
+    return n if n % 2 == 0 else n + 1
+
+
+# ─── Routes: file + folder selection ─────────────────────────────────────
+@app.route('/')
+def index():
+    return render_template('compressor.html', allowed=ALLOWED_DESC)
+
+
+@app.route('/select-files', methods=['POST'])
+def select_files():
+    """Native macOS multi-file picker. Accepts any common video container."""
+    global SELECTED
+    script = (
+        'set theFiles to choose file with prompt "Select one or more videos" '
+        'of type {"public.movie","public.mpeg-4","com.apple.quicktime-movie","public.audiovisual-content"} '
+        'with multiple selections allowed\n'
+        'set out to ""\n'
+        'repeat with f in theFiles\n'
+        '  set out to out & POSIX path of f & linefeed\n'
+        'end repeat\n'
+        'return out'
+    )
     try:
-        frame_pattern = os.path.join(tmpdir, 'frame_%05d.png')
-        cmd_frames = [
-            'ffmpeg', '-y',
-            '-i', input_file,
-            '-ss', str(t_in), '-to', str(t_out),
-            '-vf', f'crop={crop_w}:{crop_h}:{crop_x}:{crop_y},scale=360:540,fps={fps}',
-            '-an',
-            frame_pattern
-        ]
+        r = subprocess.run(['osascript', '-e', script], capture_output=True, text=True)
+        if r.returncode != 0:
+            return jsonify({'files': _file_list()})  # user cancelled
+        paths = [p for p in r.stdout.strip().splitlines() if p.strip()]
+        for p in paths:
+            if p not in SELECTED:
+                SELECTED.append(p)
+        return jsonify({'files': _file_list()})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
 
-        # Run frame extraction with progress
-        _run_ffmpeg_with_progress(cmd_frames, duration, step_num, total_steps, 'WebP: extracting frames')
 
-        frames = sorted(glob.glob(os.path.join(tmpdir, 'frame_*.png')))
-        if not frames:
-            return False, "No frames were extracted."
+@app.route('/clear-files', methods=['POST'])
+def clear_files():
+    global SELECTED
+    SELECTED = []
+    return jsonify({'files': []})
 
-        total_frames = len(frames)
-        delay_ms = int(round(1000.0 / fps))
 
-        eel.update_progress(step_num, total_steps, f'WebP: combining {total_frames} frames…')()
+@app.route('/remove-file', methods=['POST'])
+def remove_file():
+    idx = (request.json or {}).get('index')
+    if isinstance(idx, int) and 0 <= idx < len(SELECTED):
+        SELECTED.pop(idx)
+    return jsonify({'files': _file_list()})
 
-        # -lossy is CRITICAL for small file size
-        # -m 4 = good compression speed (6 is best but very slow)
-        cmd_webp = ['img2webp', '-loop', '0', '-lossy', '-q', str(quality), '-m', '4']
-        for f in frames:
-            cmd_webp.extend(['-d', str(delay_ms), f])
-        cmd_webp.extend(['-o', output_path])
 
-        res2 = subprocess.run(cmd_webp, capture_output=True, text=True)
-        if res2.returncode != 0:
-            return False, f"img2webp failed: {res2.stderr}"
-
-        size_kb = os.path.getsize(output_path) / 1024
-        return True, f"{size_kb:.0f} KB"
-    finally:
-        shutil.rmtree(tmpdir, ignore_errors=True)
-
-# ─── Static PNG Capture ──────────────────────────────────────────────────
-
-@eel.expose
-def capture_static_png(params_json):
+@app.route('/select-output', methods=['POST'])
+def select_output():
+    global OUTPUT_DIR
+    script = ('set theFolder to choose folder with prompt "Select Output Folder"\n'
+              'return POSIX path of theFolder')
     try:
-        params = json.loads(params_json)
-        input_file = params.get('inputFile')
-        output_dir = params.get('outputDir')
-        static_time = params.get('staticTime', 0)
-        mode = params.get('mode', 'custom')
-        cx, cy, cw, ch = params.get('cropX'), params.get('cropY'), params.get('cropW'), params.get('cropH')
-        export_scale_pct = params.get('exportScalePct', 100)
+        r = subprocess.run(['osascript', '-e', script], capture_output=True, text=True)
+        if r.returncode == 0:
+            OUTPUT_DIR = r.stdout.strip()
+            return jsonify({'path': OUTPUT_DIR})
+        return jsonify({'path': OUTPUT_DIR})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
 
-        if not input_file or not output_dir:
-            return {"success": False, "error": "Select a video and output folder first."}
 
-        base_name = os.path.splitext(os.path.basename(input_file))[0]
-        png_out = _next_version(os.path.join(output_dir, f"{base_name}_custom_static.png"))
+@app.route('/video/<int:idx>')
+def video(idx):
+    if 0 <= idx < len(SELECTED) and os.path.isfile(SELECTED[idx]):
+        return send_file(SELECTED[idx], conditional=True)
+    return "Not found", 404
 
-        base_w = int(cw * (export_scale_pct / 100.0))
-        base_h = int(ch * (export_scale_pct / 100.0))
 
-        # Ensure even dimensions
-        base_w = base_w if base_w % 2 == 0 else base_w + 1
-        base_h = base_h if base_h % 2 == 0 else base_h + 1
+def _file_list():
+    return [{'index': i, 'name': os.path.basename(p)} for i, p in enumerate(SELECTED)]
 
-        cmd = [
-            "ffmpeg", "-y",
-            "-ss", str(static_time), "-i", input_file,
-            "-frames:v", "1",
-            "-vf", f"crop={cw}:{ch}:{cx}:{cy},scale={base_w}:{base_h}:flags=lanczos",
-            "-update", "1",
-            png_out
-        ]
+
+# ─── YouTube download (adds one video to the list) ───────────────────────
+@app.route('/download-youtube', methods=['POST'])
+def download_youtube():
+    url = (request.json or {}).get('url', '').strip()
+    if not url:
+        return jsonify({'success': False, 'error': 'No URL.'})
+    try:
+        dl_dir = os.path.join(tempfile.gettempdir(), 'asset_comp_yt')
+        os.makedirs(dl_dir, exist_ok=True)
+        title_r = subprocess.run(['yt-dlp', '--print', 'title', '--no-warnings', url],
+                                 capture_output=True, text=True, timeout=40)
+        title = (title_r.stdout.strip() or 'video')
+        safe = re.sub(r'[^\w\s-]', '', title)[:60].strip() or 'video'
+        out_tmpl = os.path.join(dl_dir, f'{safe}.%(ext)s')
+        cmd = ['yt-dlp', '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+               '--merge-output-format', 'mp4', '-o', out_tmpl, '--no-playlist', '--no-warnings', url]
         r = subprocess.run(cmd, capture_output=True, text=True)
         if r.returncode != 0:
-            return {"success": False, "error": f"PNG failed: {r.stderr}"}
-
-        size_kb = os.path.getsize(png_out) / 1024
-        return {"success": True, "message": f"Saved: {os.path.basename(png_out)} ({size_kb:.0f} KB) [{base_w}×{base_h}]"}
-
+            return jsonify({'success': False, 'error': r.stderr[-200:] if r.stderr else 'Download failed.'})
+        files = [f for f in glob.glob(os.path.join(dl_dir, f'{safe}.*')) if f.endswith('.mp4')]
+        if not files:
+            return jsonify({'success': False, 'error': 'No MP4 produced.'})
+        SELECTED.append(files[0])
+        return jsonify({'success': True, 'index': len(SELECTED) - 1,
+                        'name': os.path.basename(files[0]), 'files': _file_list()})
+    except subprocess.TimeoutExpired:
+        return jsonify({'success': False, 'error': 'Timed out fetching info.'})
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return jsonify({'success': False, 'error': str(e)})
 
-# ─── Main Export ─────────────────────────────────────────────────────────
 
-@eel.expose
-def process_assets(params_json):
-    try:
-        params = json.loads(params_json)
-        input_file = params.get('inputFile')
-        output_dir = params.get('outputDir')
+# ─── Static PNG capture (single, from the previewed file) ────────────────
+@app.route('/capture-png', methods=['POST'])
+def capture_png():
+    p = request.json or {}
+    if not SELECTED or OUTPUT_DIR is None:
+        return jsonify({'success': False, 'error': 'Select a video and output folder first.'})
+    idx = p.get('index', 0)
+    if not (0 <= idx < len(SELECTED)):
+        idx = 0
+    input_file = SELECTED[idx]
+    cx, cy, cw, ch = p.get('cropX'), p.get('cropY'), p.get('cropW'), p.get('cropH')
+    base_w = _even(cw * (p.get('exportScalePct', 100) / 100.0))
+    base_h = _even(ch * (p.get('exportScalePct', 100) / 100.0))
+    base_name = os.path.splitext(os.path.basename(input_file))[0]
+    png_out = _next_version(os.path.join(OUTPUT_DIR, f"{base_name}_custom_static.png"))
+    cmd = [FFMPEG, "-y", "-ss", str(p.get('staticTime', 0)), "-i", input_file,
+           "-frames:v", "1",
+           "-vf", f"crop={cw}:{ch}:{cx}:{cy},scale={base_w}:{base_h}:flags=lanczos",
+           "-update", "1", png_out]
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    if r.returncode != 0:
+        return jsonify({'success': False, 'error': f"PNG failed: {r.stderr[-200:]}"})
+    size_kb = os.path.getsize(png_out) / 1024
+    return jsonify({'success': True,
+                    'message': f"Saved: {os.path.basename(png_out)} ({size_kb:.0f} KB) [{base_w}×{base_h}]"})
 
-        if not input_file or not output_dir:
-            return {"success": False, "error": "Missing input or output paths."}
 
-        do_webp = params.get('doWebP', True)
-        do_gif  = params.get('doGIF', True)
-        do_mov  = params.get('doMOV', True)
-        do_png  = params.get('doPNG', True)
+# ─── Batch export (universal settings across every selected file) ────────
+@app.route('/process', methods=['POST'])
+def process():
+    params = request.json or {}
+    threading.Thread(target=_run_batch, args=(params,), daemon=True).start()
+    return jsonify({'ok': True})
 
-        selected = [do_webp, do_gif, do_mov, do_png]
-        total = sum(selected)
-        if total == 0:
-            return {"success": False, "error": "No assets selected."}
 
-        t_in = params.get('timeIn', 0)
-        t_out = params.get('timeOut', 1)
-        duration = t_out - t_in
+@app.route('/progress')
+def progress():
+    def gen():
+        while True:
+            item = progress_q.get()
+            yield f"data: {json.dumps(item)}\n\n"
+            if item.get('type') in ('done', 'error'):
+                break
+    return Response(gen(), mimetype='text/event-stream')
 
-        # The target coordinates and dimensions
-        nx = params.get('cropX', 0)
-        ny = params.get('cropY', 0)
-        nw = params.get('cropW', 0)
-        nh = params.get('cropH', 0)
-        
-        # Scaling is now applied uniformly to the output dimensions
-        export_scale_pct = params.get('exportScalePct', 100)
 
-        # Base Crop string
-        crop_str = f"crop={nw}:{nh}:{nx}:{ny}"
-        base_w = int(nw * (export_scale_pct / 100.0))
-        base_h = int(nh * (export_scale_pct / 100.0))
+def _export_one(input_file, p, step, total, libwebp):
+    """Render the selected formats for a single file. Returns list of (fmt, ok, detail)."""
+    out = []
+    base_name = os.path.splitext(os.path.basename(input_file))[0]
+    t_in, t_out = p.get('timeIn', 0), p.get('timeOut', 1)
+    duration = max(t_out - t_in, 0.01)
+    nx, ny, nw, nh = p.get('cropX', 0), p.get('cropY', 0), p.get('cropW', 0), p.get('cropH', 0)
+    base_w = _even(nw * (p.get('exportScalePct', 100) / 100.0))
+    base_h = _even(nh * (p.get('exportScalePct', 100) / 100.0))
+    vf_base = f"crop={nw}:{nh}:{nx}:{ny},scale={base_w}:{base_h}"
+    fps = p.get('fps', 15)
+    fname = os.path.basename(input_file)
 
-        # Ensure even dimensions (FFmpeg requirement for some codecs like H.264)
-        base_w = base_w if base_w % 2 == 0 else base_w + 1
-        base_h = base_h if base_h % 2 == 0 else base_h + 1
+    def push(fmt, pct):
+        progress_q.put({'type': 'progress', 'current': step[0], 'total': total,
+                        'file': fname, 'fmt': fmt, 'pct': pct})
 
-        scale_str = f"scale={base_w}:{base_h}"
-        vf_base = f"{crop_str},{scale_str}"
-
-        static_time = params.get('staticTime', t_in)
-        fps = params.get('fps', 15)
-        webp_q = params.get('webpQuality', 60)
-        gif_colors = params.get('gifColors', 128)
-        gif_dither = params.get('gifDither', 'sierra2_4a')
-
-        base_name = os.path.splitext(os.path.basename(input_file))[0]
-        results = {}
-        step = 0
-
-        # ── WebP ─────────────────────────────────────────────────────
-        if do_webp:
-            step += 1
-            webp_out = _next_version(os.path.join(output_dir, f"{base_name}_custom.webp"))
-
-            if _has_libwebp():
-                cmd = [
-                    "ffmpeg", "-y", "-i", input_file,
-                    "-ss", str(t_in), "-to", str(t_out),
-                    "-vf", f"{vf_base},fps={fps}",
-                    "-vcodec", "libwebp", "-lossless", "0",
-                    "-q:v", str(webp_q), "-loop", "0", "-an",
-                    webp_out
-                ]
-                rc, _ = _run_ffmpeg_with_progress(cmd, duration, step, total, 'WebP')
-                if rc == 0:
-                    size_kb = os.path.getsize(webp_out) / 1024
-                    results['WebP'] = (True, f"{os.path.basename(webp_out)} ({size_kb:.0f} KB) [{base_w}×{base_h}]")
-                else:
-                    results['WebP'] = (False, "FFmpeg libwebp encode failed")
-            else:
-                ok, detail = _generate_webp_via_img2webp(
-                    input_file, t_in, t_out, nw, nh, nx, ny, 
-                    fps, webp_q, webp_out, step, total, base_w, base_h
-                )
-                if ok:
-                    results['WebP'] = (True, f"{os.path.basename(webp_out)} ({detail}) [{base_w}×{base_h}]")
-                else:
-                    results['WebP'] = (False, detail)
-
-        # ── GIF ──────────────────────────────────────────────────────
-        if do_gif:
-            step += 1
-            gif_out = _next_version(os.path.join(output_dir, f"{base_name}_custom.gif"))
-
-            if gif_colors > 256:
-                palette_str = "palettegen=stats_mode=single"
-                paletteuse_str = f"paletteuse=new=1:dither={gif_dither}"
-            else:
-                palette_str = f"palettegen=max_colors={gif_colors}"
-                paletteuse_str = f"paletteuse=dither={gif_dither}"
-
-            # We use the global `vf_base` which includes the crop and global scale
-            vf_gif = (
-                f"{vf_base},fps={fps},"
-                f"split[s0][s1];[s0]{palette_str}[p];"
-                f"[s1][p]{paletteuse_str}"
-            )
-
-            cmd = [
-                "ffmpeg", "-y", "-i", input_file,
-                "-ss", str(t_in), "-to", str(t_out),
-                "-vf", vf_gif,
-                "-loop", "0", "-an",
-                gif_out
-            ]
-            rc, _ = _run_ffmpeg_with_progress(cmd, duration, step, total, 'GIF')
+    # WebP
+    if p.get('doWebP'):
+        step[0] += 1
+        push('WebP', 0.0)
+        webp_out = _next_version(os.path.join(OUTPUT_DIR, f"{base_name}_custom.webp"))
+        if libwebp:
+            cmd = [FFMPEG, "-y", "-i", input_file, "-ss", str(t_in), "-to", str(t_out),
+                   "-vf", f"{vf_base},fps={fps}", "-vcodec", "libwebp", "-lossless", "0",
+                   "-q:v", str(p.get('webpQuality', 60)), "-loop", "0", "-an", webp_out]
+            rc, _ = _ffmpeg_with_progress(cmd, duration, lambda pc: push('WebP', pc))
             if rc == 0:
-                size_kb = os.path.getsize(gif_out) / 1024
-                results['GIF'] = (True, f"{os.path.basename(gif_out)} ({size_kb:.0f} KB) [{base_w}×{base_h}]")
+                kb = os.path.getsize(webp_out) / 1024
+                out.append(('WebP', True, f"{os.path.basename(webp_out)} ({kb:.0f} KB)"))
             else:
-                results['GIF'] = (False, "GIF generation failed")
-
-        # ── MOV ──────────────────────────────────────────────────────
-        if do_mov:
-            step += 1
-            mov_out = _next_version(os.path.join(output_dir, f"{base_name}_custom.mov"))
-
-            cmd = [
-                "ffmpeg", "-y", "-i", input_file,
-                "-ss", str(t_in), "-to", str(t_out),
-                "-vf", f"{vf_base},fps={fps}",
-                "-c:v", "libx264", "-pix_fmt", "yuv420p",
-                "-c:a", "aac", "-movflags", "+faststart",
-                mov_out
-            ]
-            rc, _ = _run_ffmpeg_with_progress(cmd, duration, step, total, 'MOV')
-            if rc == 0:
-                size_kb = os.path.getsize(mov_out) / 1024
-                results['MOV'] = (True, f"{os.path.basename(mov_out)} ({size_kb:.0f} KB) [{base_w}×{base_h}]")
-            else:
-                results['MOV'] = (False, "MOV generation failed")
-
-        # ── PNG ──────────────────────────────────────────────────────
-        if do_png:
-            step += 1
-            eel.update_progress(step, total, 'PNG — capturing…')()
-            png_out = _next_version(os.path.join(output_dir, f"{base_name}_custom_static.png"))
-
-            # Same mechanism as the "Capture PNG Now" button.
-            cmd = [
-                "ffmpeg", "-y",
-                "-ss", str(static_time), "-i", input_file,
-                "-frames:v", "1",
-                "-vf", f"crop={nw}:{nh}:{nx}:{ny},scale={base_w}:{base_h}:flags=lanczos",
-                "-update", "1",
-                png_out
-            ]
-            r = subprocess.run(cmd, capture_output=True, text=True)
-            if r.returncode == 0:
-                size_kb = os.path.getsize(png_out) / 1024
-                results['PNG'] = (True, f"{os.path.basename(png_out)} ({size_kb:.0f} KB) [{base_w}×{base_h}]")
-            else:
-                results['PNG'] = (False, r.stderr)
-
-        # ── Summary ──────────────────────────────────────────────────
-        succeeded = sum(1 for ok, _ in results.values() if ok)
-        lines = []
-        for name in ['WebP', 'GIF', 'MOV', 'PNG']:
-            if name in results:
-                ok, detail = results[name]
-                icon = '✅' if ok else '❌'
-                lines.append(f"{icon} {name}: {detail}")
-
-        summary = "\n".join(lines)
-        if succeeded == total:
-            return {"success": True, "message": summary}
+                out.append(('WebP', False, "libwebp encode failed"))
         else:
-            return {"success": False, "error": summary}
+            out.append(('WebP', False, "this ffmpeg has no libwebp"))
 
+    # GIF
+    if p.get('doGIF'):
+        step[0] += 1
+        push('GIF', 0.0)
+        gif_out = _next_version(os.path.join(OUTPUT_DIR, f"{base_name}_custom.gif"))
+        colors = p.get('gifColors', 128)
+        dither = p.get('gifDither', 'sierra2_4a')
+        if colors > 256:
+            pg, pu = "palettegen=stats_mode=single", f"paletteuse=new=1:dither={dither}"
+        else:
+            pg, pu = f"palettegen=max_colors={colors}", f"paletteuse=dither={dither}"
+        vf_gif = f"{vf_base},fps={fps},split[s0][s1];[s0]{pg}[p];[s1][p]{pu}"
+        cmd = [FFMPEG, "-y", "-i", input_file, "-ss", str(t_in), "-to", str(t_out),
+               "-vf", vf_gif, "-loop", "0", "-an", gif_out]
+        rc, _ = _ffmpeg_with_progress(cmd, duration, lambda pc: push('GIF', pc))
+        if rc == 0:
+            kb = os.path.getsize(gif_out) / 1024
+            out.append(('GIF', True, f"{os.path.basename(gif_out)} ({kb:.0f} KB)"))
+        else:
+            out.append(('GIF', False, "GIF generation failed"))
+
+    # MOV
+    if p.get('doMOV'):
+        step[0] += 1
+        push('MOV', 0.0)
+        mov_out = _next_version(os.path.join(OUTPUT_DIR, f"{base_name}_custom.mov"))
+        cmd = [FFMPEG, "-y", "-i", input_file, "-ss", str(t_in), "-to", str(t_out),
+               "-vf", f"{vf_base},fps={fps}", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+               "-c:a", "aac", "-movflags", "+faststart", mov_out]
+        rc, _ = _ffmpeg_with_progress(cmd, duration, lambda pc: push('MOV', pc))
+        if rc == 0:
+            kb = os.path.getsize(mov_out) / 1024
+            out.append(('MOV', True, f"{os.path.basename(mov_out)} ({kb:.0f} KB)"))
+        else:
+            out.append(('MOV', False, "MOV generation failed"))
+
+    # PNG (same mechanism as the Capture button)
+    if p.get('doPNG'):
+        step[0] += 1
+        push('PNG', 0.0)
+        png_out = _next_version(os.path.join(OUTPUT_DIR, f"{base_name}_custom_static.png"))
+        cmd = [FFMPEG, "-y", "-ss", str(p.get('staticTime', t_in)), "-i", input_file,
+               "-frames:v", "1",
+               "-vf", f"crop={nw}:{nh}:{nx}:{ny},scale={base_w}:{base_h}:flags=lanczos",
+               "-update", "1", png_out]
+        r = subprocess.run(cmd, capture_output=True, text=True)
+        if r.returncode == 0:
+            kb = os.path.getsize(png_out) / 1024
+            out.append(('PNG', True, f"{os.path.basename(png_out)} ({kb:.0f} KB)"))
+        else:
+            out.append(('PNG', False, "PNG failed"))
+    return out
+
+
+def _run_batch(p):
+    try:
+        if not SELECTED:
+            progress_q.put({'type': 'error', 'message': 'No videos selected.'})
+            return
+        if OUTPUT_DIR is None:
+            progress_q.put({'type': 'error', 'message': 'No output folder selected.'})
+            return
+        n_fmts = sum(bool(p.get(k)) for k in ('doWebP', 'doGIF', 'doMOV', 'doPNG'))
+        if n_fmts == 0:
+            progress_q.put({'type': 'error', 'message': 'No formats selected.'})
+            return
+
+        libwebp = _has_libwebp()
+        total = len(SELECTED) * n_fmts
+        step = [0]
+        lines = []
+        any_fail = False
+        for f in list(SELECTED):
+            results = _export_one(f, p, step, total, libwebp)
+            lines.append(os.path.basename(f))
+            for fmt, ok, detail in results:
+                icon = '✅' if ok else '❌'
+                if not ok:
+                    any_fail = True
+                lines.append(f"   {icon} {fmt}: {detail}")
+
+        progress_q.put({'type': 'done', 'success': not any_fail,
+                        'message': "\n".join(lines)})
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        progress_q.put({'type': 'error', 'message': str(e)})
+
 
 if __name__ == '__main__':
-    server_thread = threading.Thread(target=_start_video_server, daemon=True)
-    server_thread.start()
-    eel.start('compressor.html', size=(1200, 800), position=(100, 100))
+    threading.Timer(1.0, lambda: webbrowser.open(f'http://127.0.0.1:{PORT}/')).start()
+    app.run(host='127.0.0.1', port=PORT, threaded=True)

@@ -7,7 +7,7 @@
     <title>Asset Compressor</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/15.7.0/nouislider.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="compressor.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='compressor.css') }}">
 </head>
 
 <body>
@@ -21,14 +21,20 @@
 
             <div class="control-group">
                 <h3>1. Input Source</h3>
-                <button id="btn-browse" class="btn primary">Browse Video (MP4)</button>
+                <button id="btn-browse" class="btn primary">Browse Videos</button>
+                <div class="input-hint">
+                    Pick <b>one or many</b> — {{ allowed }}. The crop and settings below apply to <b>every</b> file you add.
+                </div>
                 <div class="yt-divider">— or paste a YouTube link —</div>
                 <div class="yt-input-row">
                     <input type="text" id="yt-url" class="yt-url-input" placeholder="https://youtube.com/watch?v=…">
                     <button id="btn-yt-download" class="btn secondary yt-btn">⬇️</button>
                 </div>
                 <div id="yt-status" class="yt-status"></div>
-                <div id="input-filename" class="file-path">No file selected</div>
+
+                <div id="file-list" class="file-list"></div>
+                <div id="file-empty" class="file-empty">No files selected</div>
+                <button id="btn-clear" class="btn-clear" style="display:none;">Clear all</button>
             </div>
 
             <div class="control-group">
@@ -63,11 +69,11 @@
 
                 <div class="input-row">
                     <label for="gif-scale">Scale %</label>
-                    <select id="gif-scale">
-                        <option value="100" selected>100% (360×540)</option>
-                        <option value="75">75% (270×406)</option>
-                        <option value="66">66% (240×360)</option>
-                        <option value="50">50% (180×270)</option>
+                    <select id="export-scale">
+                        <option value="100" selected>100%</option>
+                        <option value="75">75%</option>
+                        <option value="66">66%</option>
+                        <option value="50">50%</option>
                     </select>
                 </div>
 
@@ -111,19 +117,14 @@
         <!-- Main Content -->
         <main class="main-content">
             <div class="preview-header">
-                <h2>Viewport Cropper</h2>
+                <h2>Viewport Cropper <span id="preview-name" class="preview-name"></span></h2>
                 <div class="cropper-controls">
                     <div class="custom-size-group">
                         <label>Target Size:</label>
                         <input type="number" id="crop-width" class="size-input" min="10" placeholder="W">
                         <button id="btn-link-ratio" class="btn-icon active" title="Lock Aspect Ratio">🔗</button>
                         <input type="number" id="crop-height" class="size-input" min="10" placeholder="H">
-                        <select id="export-scale" class="native-scale-select" title="Output Scale %">
-                            <option value="100">100%</option>
-                            <option value="75">75%</option>
-                            <option value="50">50%</option>
-                            <option value="25">25%</option>
-                        </select>
+                        <select id="export-scale-dummy" class="native-scale-select" style="display:none;"></select>
                     </div>
                     <div class="presets-group">
                         <span class="preset-label">Presets:</span>
@@ -168,9 +169,8 @@
         </main>
     </div>
 
-    <script type="text/javascript" src="/eel.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/15.7.0/nouislider.min.js"></script>
-    <script src="compressor.js"></script>
+    <script src="{{ url_for('static', filename='compressor.js') }}"></script>
 </body>
 
 </html>

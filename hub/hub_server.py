@@ -12,6 +12,8 @@ import json
 import time
 import threading
 import subprocess
+import shutil
+import hashlib
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -39,7 +41,7 @@ APPS = {
     "asset-compressor": {
         "name": "Asset Compressor",
         "start": ["python3", "compressor.py"],
-        "url": None,  # Eel opens its own window
+        "url": "http://127.0.0.1:5002",
     },
 }
 
@@ -68,20 +70,41 @@ def ensure_and_launch(aid):
                 webbrowser.open(app["url"])
             return
 
-        # First-time environment setup (isolated per app).
-        if not os.path.exists(vpy):
+        # A marker stores the requirements signature of a SUCCESSFUL install.
+        # Rebuild cleanly if it's missing (failed/partial) or requirements changed.
+        marker = os.path.join(venv, ".setup_ok")
+        try:
+            with open(reqs, "rb") as f:
+                cur_sig = hashlib.sha1(f.read()).hexdigest()
+        except OSError:
+            cur_sig = ""
+        stored_sig = ""
+        if os.path.exists(marker):
+            try:
+                with open(marker) as f:
+                    stored_sig = f.read().strip()
+            except OSError:
+                pass
+        if not os.path.exists(vpy) or not os.path.exists(marker) or stored_sig != cur_sig:
+            if os.path.isdir(venv):
+                shutil.rmtree(venv, ignore_errors=True)
             _set(aid, "installing", "Setting up — about a minute the first time…")
             subprocess.run(["python3", "-m", "venv", ".venv"], cwd=app_dir, check=True)
             subprocess.run([pip, "install", "--upgrade", "pip", "-q", *PIP_INDEX],
                            cwd=app_dir, check=True)
             if os.path.exists(reqs):
-                subprocess.run([pip, "install", "-r", "requirements.txt", *PIP_INDEX],
+                # Force prebuilt wheels so NOTHING compiles on the machine. Building
+                # C extensions (e.g. gevent) runs ./configure test binaries that a
+                # corporate binary-authorization tool (Santa) blocks.
+                subprocess.run([pip, "install", "--only-binary=:all:", "-r", "requirements.txt", *PIP_INDEX],
                                cwd=app_dir, check=True)
+            with open(marker, "w") as f:
+                f.write(cur_sig)
         else:
             # Keep yt-dlp current each launch (both apps rely on it).
             _set(aid, "starting", "Checking for updates…")
             try:
-                subprocess.run([pip, "install", "--upgrade", "yt-dlp", "-q", *PIP_INDEX],
+                subprocess.run([pip, "install", "--upgrade", "yt-dlp", "-q", "--only-binary=:all:", *PIP_INDEX],
                                cwd=app_dir, timeout=90)
             except Exception:
                 pass
@@ -99,7 +122,7 @@ def ensure_and_launch(aid):
             return
         _set(aid, "running", "Open in its own window")
     except subprocess.CalledProcessError as e:
-        _set(aid, "error", "Setup failed. Check your internet and try again.")
+        _set(aid, "error", "Setup failed — see the Terminal window for details.")
         print("Setup error for %s: %s" % (aid, e))
     except Exception as e:
         _set(aid, "error", str(e))
