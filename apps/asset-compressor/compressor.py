@@ -419,21 +419,21 @@ def process_assets(params_json):
         if do_png:
             step += 1
             eel.update_progress(step, total, 'PNG — capturing…')()
-            png_out = _next_version(os.path.join(output_dir, f"{base_name}_{mode}.png"))
+            png_out = _next_version(os.path.join(output_dir, f"{base_name}_custom_static.png"))
 
+            # Same mechanism as the "Capture PNG Now" button.
             cmd = [
                 "ffmpeg", "-y",
                 "-ss", str(static_time), "-i", input_file,
                 "-frames:v", "1",
-                "-vf", f"{vf_base}:flags=lanczos",
-                "-pix_fmt", "rgb24",
+                "-vf", f"crop={nw}:{nh}:{nx}:{ny},scale={base_w}:{base_h}:flags=lanczos",
                 "-update", "1",
                 png_out
             ]
             r = subprocess.run(cmd, capture_output=True, text=True)
             if r.returncode == 0:
                 size_kb = os.path.getsize(png_out) / 1024
-                results['PNG'] = (True, f"{os.path.basename(png_out)} ({size_kb:.0f} KB)")
+                results['PNG'] = (True, f"{os.path.basename(png_out)} ({size_kb:.0f} KB) [{base_w}×{base_h}]")
             else:
                 results['PNG'] = (False, r.stderr)
 

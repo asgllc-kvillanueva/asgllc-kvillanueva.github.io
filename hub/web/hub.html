@@ -126,7 +126,7 @@
     try{
       await fetch("/launch/" + id, { method: "POST" });
     }catch(e){
-      setState(id, "error", "Couldn't reach the hub.");
+      setState(id, "error", "The Terminal window is closed. Double-click YouTube Downloader to reopen it.");
       return;
     }
     if (polling[id]) clearInterval(polling[id]);
