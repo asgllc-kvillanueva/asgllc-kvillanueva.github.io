@@ -68,10 +68,13 @@ if [ ! -d "$INSTALL_DIR/hub" ]; then
   exit 1
 fi
 
-# 3. ffmpeg. Prefer one ALREADY installed on this Mac — on managed machines the
-#    Homebrew copy lives in a path the security tooling already trusts, whereas a
-#    binary we download ourselves is unknown to it and gets blocked. So we use the
-#    system/Homebrew ffmpeg and only download as a last resort.
+# 3. ffmpeg. The Asset Compressor no longer needs it (it does all video work
+#    in-process with PyAV + Pillow), but the Universal Downloader still does —
+#    yt-dlp uses ffmpeg to merge video+audio. Prefer one ALREADY installed on
+#    this Mac: on managed machines the Homebrew copy lives in a path the security
+#    tooling already trusts, whereas a binary we download ourselves is unknown to
+#    it and gets blocked. So we use the system/Homebrew ffmpeg and only download
+#    as a last resort.
 export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 rm -f "$INSTALL_DIR/bin/ffmpeg" 2>/dev/null   # clear any earlier download so it can't shadow the trusted one
 

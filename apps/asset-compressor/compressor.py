@@ -8,13 +8,17 @@ import threading
 import subprocess
 import webbrowser
 
+import av
+from PIL import Image
 from flask import Flask, render_template, request, jsonify, Response, send_file
 
 app = Flask(__name__)
 PORT = 5002
 
-# ffmpeg is on PATH (the hub puts the shared bin/ directory there).
-FFMPEG = "ffmpeg"
+# All video processing is done in-process with PyAV (the ffmpeg libraries as a
+# Python library) and Pillow — no external ffmpeg binary is called. On the
+# locked-down corporate Mac, Santa blocks unknown binaries but allows these
+# prebuilt wheels to load as in-process libraries.
 
 # Human-readable list of what you can load (shown in the UI).
 ALLOWED_DESC = "MP4, MOV, M4V, WebM, AVI, and more"
@@ -36,35 +40,104 @@ def _next_version(filepath):
         v += 1
 
 
-def _has_libwebp():
-    try:
-        r = subprocess.run([FFMPEG, "-hide_banner", "-encoders"],
-                           capture_output=True, text=True)
-        return "libwebp" in r.stdout
-    except Exception:
-        return False
-
-
-def _ffmpeg_with_progress(cmd, duration_sec, on_pct):
-    """Run ffmpeg, parse time= from stderr, call on_pct(fraction 0..1)."""
-    process = subprocess.Popen(cmd, stderr=subprocess.PIPE, stdout=subprocess.PIPE,
-                               universal_newlines=True, bufsize=1)
-    time_re = re.compile(r'time=(\d+):(\d+):(\d+\.\d+)')
-    errbuf = []
-    for line in process.stderr:
-        errbuf.append(line)
-        m = time_re.search(line)
-        if m and duration_sec > 0:
-            h, mn, s = int(m.group(1)), int(m.group(2)), float(m.group(3))
-            cur = h * 3600 + mn * 60 + s
-            on_pct(min(cur / duration_sec, 1.0))
-    process.wait()
-    return process.returncode, "".join(errbuf)
-
-
 def _even(n):
-    n = int(n)
+    n = int(round(n))
     return n if n % 2 == 0 else n + 1
+
+
+def _crop_scale(img, crop, size):
+    """Crop (cx, cy, cw, ch) out of a PIL image, then resize to size (w, h)."""
+    cx, cy, cw, ch = (int(round(v)) for v in crop)
+    W, H = img.size
+    cx = max(0, min(cx, max(W - 1, 0)))
+    cy = max(0, min(cy, max(H - 1, 0)))
+    cw = max(1, min(cw, W - cx))
+    ch = max(1, min(ch, H - cy))
+    img = img.crop((cx, cy, cx + cw, cy + ch))
+    if img.size != tuple(size):
+        img = img.resize(tuple(size), Image.LANCZOS)
+    return img
+
+
+def _grab_frame(input_file, t_sec, crop, size):
+    """Return one cropped+scaled PIL image at (about) t_sec."""
+    container = av.open(input_file)
+    try:
+        stream = container.streams.video[0]
+        stream.thread_type = "AUTO"
+        if t_sec > 0 and stream.time_base:
+            try:
+                container.seek(int(t_sec / stream.time_base), stream=stream, backward=True)
+            except Exception:
+                pass
+        chosen = None
+        for frame in container.decode(stream):
+            chosen = frame
+            if frame.time is not None and frame.time >= t_sec:
+                break
+        if chosen is None:
+            raise RuntimeError("no frames decoded")
+        return _crop_scale(chosen.to_image().convert("RGB"), crop, size)
+    finally:
+        container.close()
+
+
+def _collect_frames(input_file, t_in, t_out, fps, crop, size, on_pct):
+    """Decode the [t_in, t_out] window and return PIL frames sampled at `fps`.
+
+    Uses the last decoded frame at or before each sample time, so output runs at
+    a steady fps regardless of the source frame rate. `on_pct` gets 0..1.
+    """
+    interval = 1.0 / float(fps)
+    sample_times = []
+    t = t_in
+    while t <= t_out + 1e-9:
+        sample_times.append(t)
+        t += interval
+    total = max(len(sample_times), 1)
+
+    frames = []
+    si = 0
+    prev_img = None
+
+    container = av.open(input_file)
+    try:
+        stream = container.streams.video[0]
+        stream.thread_type = "AUTO"
+        if t_in > 0 and stream.time_base:
+            try:
+                container.seek(int(t_in / stream.time_base), stream=stream, backward=True)
+            except Exception:
+                pass
+        for frame in container.decode(stream):
+            ts = frame.time
+            if ts is None:
+                continue
+            if ts < t_in:
+                prev_img = frame  # keep the most recent frame before the window
+                continue
+            if ts > t_out:
+                break
+            # Emit every sample time that falls before this frame, using the frame
+            # that was on screen at that moment (the previous one).
+            while si < len(sample_times) and sample_times[si] < ts - 1e-9:
+                src = prev_img if prev_img is not None else frame
+                frames.append(_crop_scale(src.to_image().convert("RGB"), crop, size))
+                si += 1
+                on_pct(min(len(frames) / total, 0.99))
+            prev_img = frame
+        # Flush any remaining sample times with the last frame we saw.
+        while si < len(sample_times) and prev_img is not None:
+            frames.append(_crop_scale(prev_img.to_image().convert("RGB"), crop, size))
+            si += 1
+            on_pct(min(len(frames) / total, 0.99))
+    finally:
+        container.close()
+
+    if not frames and prev_img is not None:
+        frames.append(_crop_scale(prev_img.to_image().convert("RGB"), crop, size))
+    on_pct(1.0)
+    return frames
 
 
 # ─── Routes: file + folder selection ─────────────────────────────────────
@@ -187,13 +260,12 @@ def capture_png():
     base_h = _even(ch * (p.get('exportScalePct', 100) / 100.0))
     base_name = os.path.splitext(os.path.basename(input_file))[0]
     png_out = _next_version(os.path.join(OUTPUT_DIR, f"{base_name}_custom_static.png"))
-    cmd = [FFMPEG, "-y", "-ss", str(p.get('staticTime', 0)), "-i", input_file,
-           "-frames:v", "1",
-           "-vf", f"crop={cw}:{ch}:{cx}:{cy},scale={base_w}:{base_h}:flags=lanczos",
-           "-update", "1", png_out]
-    r = subprocess.run(cmd, capture_output=True, text=True)
-    if r.returncode != 0:
-        return jsonify({'success': False, 'error': f"PNG failed: {r.stderr[-200:]}"})
+    try:
+        img = _grab_frame(input_file, float(p.get('staticTime', 0)),
+                          (cx, cy, cw, ch), (base_w, base_h))
+        img.save(png_out, "PNG")
+    except Exception as e:
+        return jsonify({'success': False, 'error': f"PNG failed: {e}"})
     size_kb = os.path.getsize(png_out) / 1024
     return jsonify({'success': True,
                     'message': f"Saved: {os.path.basename(png_out)} ({size_kb:.0f} KB) [{base_w}×{base_h}]"})
@@ -218,92 +290,119 @@ def progress():
     return Response(gen(), mimetype='text/event-stream')
 
 
-def _export_one(input_file, p, step, total, libwebp):
+def _export_one(input_file, p, step, total):
     """Render the selected formats for a single file. Returns list of (fmt, ok, detail)."""
     out = []
     base_name = os.path.splitext(os.path.basename(input_file))[0]
-    t_in, t_out = p.get('timeIn', 0), p.get('timeOut', 1)
-    duration = max(t_out - t_in, 0.01)
+    t_in, t_out = float(p.get('timeIn', 0)), float(p.get('timeOut', 1))
     nx, ny, nw, nh = p.get('cropX', 0), p.get('cropY', 0), p.get('cropW', 0), p.get('cropH', 0)
     base_w = _even(nw * (p.get('exportScalePct', 100) / 100.0))
     base_h = _even(nh * (p.get('exportScalePct', 100) / 100.0))
-    vf_base = f"crop={nw}:{nh}:{nx}:{ny},scale={base_w}:{base_h}"
-    fps = p.get('fps', 15)
+    fps = int(p.get('fps', 15))
+    frame_ms = max(int(round(1000.0 / fps)), 1)
     fname = os.path.basename(input_file)
 
     def push(fmt, pct):
         progress_q.put({'type': 'progress', 'current': step[0], 'total': total,
                         'file': fname, 'fmt': fmt, 'pct': pct})
 
-    # WebP
+    # The animated formats (WebP/GIF/MOV) share one decode pass over the window;
+    # frames are decoded the first time one is needed and reused after that.
+    frames = None
+
+    def get_frames(fmt):
+        nonlocal frames
+        if frames is None:
+            frames = _collect_frames(input_file, t_in, t_out, fps,
+                                     (nx, ny, nw, nh), (base_w, base_h),
+                                     lambda pc: push(fmt, pc))
+        return frames
+
+    # WebP (animated, via Pillow)
     if p.get('doWebP'):
         step[0] += 1
         push('WebP', 0.0)
         webp_out = _next_version(os.path.join(OUTPUT_DIR, f"{base_name}_custom.webp"))
-        if libwebp:
-            cmd = [FFMPEG, "-y", "-i", input_file, "-ss", str(t_in), "-to", str(t_out),
-                   "-vf", f"{vf_base},fps={fps}", "-vcodec", "libwebp", "-lossless", "0",
-                   "-q:v", str(p.get('webpQuality', 60)), "-loop", "0", "-an", webp_out]
-            rc, _ = _ffmpeg_with_progress(cmd, duration, lambda pc: push('WebP', pc))
-            if rc == 0:
-                kb = os.path.getsize(webp_out) / 1024
-                out.append(('WebP', True, f"{os.path.basename(webp_out)} ({kb:.0f} KB)"))
-            else:
-                out.append(('WebP', False, "libwebp encode failed"))
-        else:
-            out.append(('WebP', False, "this ffmpeg has no libwebp"))
+        try:
+            fr = get_frames('WebP')
+            if not fr:
+                raise RuntimeError("no frames in range")
+            fr[0].save(webp_out, "WEBP", save_all=True, append_images=fr[1:],
+                       duration=frame_ms, loop=0, lossless=False,
+                       quality=int(p.get('webpQuality', 60)), method=4)
+            push('WebP', 1.0)
+            kb = os.path.getsize(webp_out) / 1024
+            out.append(('WebP', True, f"{os.path.basename(webp_out)} ({kb:.0f} KB)"))
+        except Exception as e:
+            out.append(('WebP', False, f"WebP encode failed: {e}"))
 
-    # GIF
+    # GIF (animated, via Pillow palette quantize)
     if p.get('doGIF'):
         step[0] += 1
         push('GIF', 0.0)
         gif_out = _next_version(os.path.join(OUTPUT_DIR, f"{base_name}_custom.gif"))
-        colors = p.get('gifColors', 128)
-        dither = p.get('gifDither', 'sierra2_4a')
-        if colors > 256:
-            pg, pu = "palettegen=stats_mode=single", f"paletteuse=new=1:dither={dither}"
-        else:
-            pg, pu = f"palettegen=max_colors={colors}", f"paletteuse=dither={dither}"
-        vf_gif = f"{vf_base},fps={fps},split[s0][s1];[s0]{pg}[p];[s1][p]{pu}"
-        cmd = [FFMPEG, "-y", "-i", input_file, "-ss", str(t_in), "-to", str(t_out),
-               "-vf", vf_gif, "-loop", "0", "-an", gif_out]
-        rc, _ = _ffmpeg_with_progress(cmd, duration, lambda pc: push('GIF', pc))
-        if rc == 0:
+        colors = min(int(p.get('gifColors', 128)), 256)
+        dither = Image.Dither.NONE if p.get('gifDither') == 'none' else Image.Dither.FLOYDSTEINBERG
+        try:
+            fr = get_frames('GIF')
+            if not fr:
+                raise RuntimeError("no frames in range")
+            pal = [im.quantize(colors=colors, dither=dither) for im in fr]
+            pal[0].save(gif_out, "GIF", save_all=True, append_images=pal[1:],
+                        duration=frame_ms, loop=0, disposal=2, optimize=True)
+            push('GIF', 1.0)
             kb = os.path.getsize(gif_out) / 1024
             out.append(('GIF', True, f"{os.path.basename(gif_out)} ({kb:.0f} KB)"))
-        else:
-            out.append(('GIF', False, "GIF generation failed"))
+        except Exception as e:
+            out.append(('GIF', False, f"GIF generation failed: {e}"))
 
-    # MOV
+    # MOV (H.264 / yuv420p, encoded with PyAV — video only)
     if p.get('doMOV'):
         step[0] += 1
         push('MOV', 0.0)
         mov_out = _next_version(os.path.join(OUTPUT_DIR, f"{base_name}_custom.mov"))
-        cmd = [FFMPEG, "-y", "-i", input_file, "-ss", str(t_in), "-to", str(t_out),
-               "-vf", f"{vf_base},fps={fps}", "-c:v", "libx264", "-pix_fmt", "yuv420p",
-               "-c:a", "aac", "-movflags", "+faststart", mov_out]
-        rc, _ = _ffmpeg_with_progress(cmd, duration, lambda pc: push('MOV', pc))
-        if rc == 0:
+        try:
+            fr = get_frames('MOV')
+            if not fr:
+                raise RuntimeError("no frames in range")
+            container = av.open(mov_out, mode='w', options={'movflags': '+faststart'})
+            try:
+                vstream = container.add_stream('libx264', rate=fps)
+                vstream.width = base_w
+                vstream.height = base_h
+                vstream.pix_fmt = 'yuv420p'
+                n = len(fr)
+                for i, im in enumerate(fr):
+                    vframe = av.VideoFrame.from_image(im)
+                    for packet in vstream.encode(vframe):
+                        container.mux(packet)
+                    if i % 5 == 0:
+                        push('MOV', min((i + 1) / n, 0.99))
+                for packet in vstream.encode():
+                    container.mux(packet)
+            finally:
+                container.close()
+            push('MOV', 1.0)
             kb = os.path.getsize(mov_out) / 1024
             out.append(('MOV', True, f"{os.path.basename(mov_out)} ({kb:.0f} KB)"))
-        else:
-            out.append(('MOV', False, "MOV generation failed"))
+        except Exception as e:
+            out.append(('MOV', False, f"MOV generation failed: {e}"))
 
-    # PNG (same mechanism as the Capture button)
+    # PNG (single still frame, via PyAV → Pillow)
     if p.get('doPNG'):
         step[0] += 1
         push('PNG', 0.0)
         png_out = _next_version(os.path.join(OUTPUT_DIR, f"{base_name}_custom_static.png"))
-        cmd = [FFMPEG, "-y", "-ss", str(p.get('staticTime', t_in)), "-i", input_file,
-               "-frames:v", "1",
-               "-vf", f"crop={nw}:{nh}:{nx}:{ny},scale={base_w}:{base_h}:flags=lanczos",
-               "-update", "1", png_out]
-        r = subprocess.run(cmd, capture_output=True, text=True)
-        if r.returncode == 0:
+        try:
+            img = _grab_frame(input_file, float(p.get('staticTime', t_in)),
+                              (nx, ny, nw, nh), (base_w, base_h))
+            img.save(png_out, "PNG")
+            push('PNG', 1.0)
             kb = os.path.getsize(png_out) / 1024
             out.append(('PNG', True, f"{os.path.basename(png_out)} ({kb:.0f} KB)"))
-        else:
-            out.append(('PNG', False, "PNG failed"))
+        except Exception as e:
+            out.append(('PNG', False, f"PNG failed: {e}"))
+
     return out
 
 
@@ -320,13 +419,12 @@ def _run_batch(p):
             progress_q.put({'type': 'error', 'message': 'No formats selected.'})
             return
 
-        libwebp = _has_libwebp()
         total = len(SELECTED) * n_fmts
         step = [0]
         lines = []
         any_fail = False
         for f in list(SELECTED):
-            results = _export_one(f, p, step, total, libwebp)
+            results = _export_one(f, p, step, total)
             lines.append(os.path.basename(f))
             for fmt, ok, detail in results:
                 icon = '✅' if ok else '❌'
