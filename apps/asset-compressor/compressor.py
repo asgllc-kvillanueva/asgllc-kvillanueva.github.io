@@ -23,6 +23,14 @@ PORT = 5002
 # Human-readable list of what you can load (shown in the UI).
 ALLOWED_DESC = "MP4, MOV, M4V, WebM, AVI, and more"
 
+# Extra yt-dlp flags for the YouTube path. The Android player client returns
+# pre-deciphered stream URLs, so yt-dlp never runs YouTube's JavaScript "nsig"
+# challenge — the step that otherwise tries to execute a JS runtime like Deno,
+# which Santa blocks on the corporate Mac. (The Universal Downloader uses the
+# same Android client; this keeps the two YouTube paths consistent.)
+YT_COMPAT = ['--extractor-args', 'youtube:player_client=android',
+             '--no-check-certificate', '--legacy-server-connect']
+
 # Server-side state. Single user, single window.
 SELECTED = []          # list of absolute video paths
 OUTPUT_DIR = None
@@ -223,13 +231,14 @@ def download_youtube():
     try:
         dl_dir = os.path.join(tempfile.gettempdir(), 'asset_comp_yt')
         os.makedirs(dl_dir, exist_ok=True)
-        title_r = subprocess.run(['yt-dlp', '--print', 'title', '--no-warnings', url],
+        title_r = subprocess.run(['yt-dlp', '--print', 'title', '--no-warnings', *YT_COMPAT, url],
                                  capture_output=True, text=True, timeout=40)
         title = (title_r.stdout.strip() or 'video')
         safe = re.sub(r'[^\w\s-]', '', title)[:60].strip() or 'video'
         out_tmpl = os.path.join(dl_dir, f'{safe}.%(ext)s')
         cmd = ['yt-dlp', '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-               '--merge-output-format', 'mp4', '-o', out_tmpl, '--no-playlist', '--no-warnings', url]
+               '--merge-output-format', 'mp4', '-o', out_tmpl, '--no-playlist', '--no-warnings',
+               *YT_COMPAT, url]
         r = subprocess.run(cmd, capture_output=True, text=True)
         if r.returncode != 0:
             return jsonify({'success': False, 'error': r.stderr[-200:] if r.stderr else 'Download failed.'})
