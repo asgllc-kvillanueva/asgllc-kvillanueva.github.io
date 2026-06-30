@@ -68,14 +68,28 @@ if [ ! -d "$INSTALL_DIR/hub" ]; then
   exit 1
 fi
 
-# 3. Shared ffmpeg (built with libwebp, used by every app). Installed once.
-if [ ! -f "$INSTALL_DIR/bin/ffmpeg" ]; then
+# 3. ffmpeg. Prefer one ALREADY installed on this Mac — on managed machines the
+#    Homebrew copy lives in a path the security tooling already trusts, whereas a
+#    binary we download ourselves is unknown to it and gets blocked. So we use the
+#    system/Homebrew ffmpeg and only download as a last resort.
+export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+rm -f "$INSTALL_DIR/bin/ffmpeg" 2>/dev/null   # clear any earlier download so it can't shadow the trusted one
+
+if command -v ffmpeg >/dev/null 2>&1; then
+  echo "Using the ffmpeg already on this Mac ($(command -v ffmpeg))."
+elif command -v brew >/dev/null 2>&1; then
+  echo "Installing ffmpeg with Homebrew (one time)…"
+  brew install ffmpeg
+else
   echo "Downloading ffmpeg (one time)…"
   mkdir -p "$INSTALL_DIR/bin"
   curl -sL -o "$INSTALL_DIR/bin/ffmpeg.zip" https://evermeet.cx/ffmpeg/getrelease/zip
   unzip -q -o "$INSTALL_DIR/bin/ffmpeg.zip" -d "$INSTALL_DIR/bin/"
   rm -f "$INSTALL_DIR/bin/ffmpeg.zip"
   chmod +x "$INSTALL_DIR/bin/ffmpeg" 2>/dev/null || true
+  export PATH="$INSTALL_DIR/bin:$PATH"
+  echo "Note: if this Mac runs security software like Santa, this downloaded ffmpeg"
+  echo "may be blocked. Installing Homebrew, then 'brew install ffmpeg', avoids that."
 fi
 
 # 4. Run the hub (standard-library Python — no setup needed). It opens your

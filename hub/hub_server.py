@@ -109,10 +109,16 @@ def ensure_and_launch(aid):
             except Exception:
                 pass
 
-        # Launch the app in its own venv, with the shared bin/ on PATH for ffmpeg.
+        # Launch the app in its own venv. PATH order: the app's venv, then the
+        # trusted system locations (Homebrew/usr-local) where an IT-approved ffmpeg
+        # lives, then our own bin/ as a fallback, then the inherited PATH.
         _set(aid, "starting", "Opening…")
         env = dict(os.environ)
-        env["PATH"] = os.pathsep.join([os.path.join(venv, "bin"), BIN_DIR, env.get("PATH", "")])
+        env["PATH"] = os.pathsep.join([
+            os.path.join(venv, "bin"),
+            "/opt/homebrew/bin", "/usr/local/bin",
+            BIN_DIR, env.get("PATH", ""),
+        ])
         proc = subprocess.Popen([vpy] + app["start"][1:], cwd=app_dir, env=env)
         procs[aid] = proc
 
