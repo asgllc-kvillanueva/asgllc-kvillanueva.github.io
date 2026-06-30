@@ -1,5 +1,6 @@
 import os
 import re
+import sys
 import json
 import glob
 import queue
@@ -24,12 +25,33 @@ PORT = 5002
 ALLOWED_DESC = "MP4, MOV, M4V, WebM, AVI, and more"
 
 # Extra yt-dlp flags for the YouTube path. The Android player client returns
-# pre-deciphered stream URLs, so yt-dlp never runs YouTube's JavaScript "nsig"
-# challenge — the step that otherwise tries to execute a JS runtime like Deno,
-# which Santa blocks on the corporate Mac. (The Universal Downloader uses the
-# same Android client; this keeps the two YouTube paths consistent.)
+# pre-deciphered stream URLs, so when it works yt-dlp skips YouTube's JavaScript
+# "nsig" challenge entirely. (The Universal Downloader uses the same client.)
 YT_COMPAT = ['--extractor-args', 'youtube:player_client=android',
              '--no-check-certificate', '--legacy-server-connect']
+
+# A single pre-muxed (progressive) MP4 — one file with both audio and video, so
+# no ffmpeg merge is ever needed. `18` (360p H.264) is virtually always present
+# as a reliable fallback.
+YT_FORMAT = ('best[ext=mp4][vcodec!=none][acodec!=none]/'
+             '18/best[vcodec!=none][acodec!=none]/best')
+
+
+def _yt_env():
+    """Environment for yt-dlp subprocesses with a PATH that HIDES external
+    binaries Santa blocks on the corporate Mac — chiefly the Deno JS runtime and
+    ffmpeg. On the corp network the Android client is sometimes rejected and
+    yt-dlp would fall back to a client that needs the JS challenge, then try to
+    run Deno (blocked → scary popup). With those binaries off PATH, yt-dlp simply
+    can't launch them: it logs a warning and still downloads a progressive stream
+    (verified to produce the identical file). Pairing this with YT_FORMAT means no
+    ffmpeg merge is needed either, so neither binary is ever executed."""
+    env = dict(os.environ)
+    env['PATH'] = os.pathsep.join([
+        os.path.dirname(sys.executable),  # the app's venv bin (where yt-dlp lives)
+        '/usr/bin', '/bin', '/usr/sbin', '/sbin',
+    ])
+    return env
 
 # Server-side state. Single user, single window.
 SELECTED = []          # list of absolute video paths
@@ -231,20 +253,25 @@ def download_youtube():
     try:
         dl_dir = os.path.join(tempfile.gettempdir(), 'asset_comp_yt')
         os.makedirs(dl_dir, exist_ok=True)
+        yt_env = _yt_env()
         title_r = subprocess.run(['yt-dlp', '--print', 'title', '--no-warnings', *YT_COMPAT, url],
-                                 capture_output=True, text=True, timeout=40)
+                                 capture_output=True, text=True, timeout=40, env=yt_env)
         title = (title_r.stdout.strip() or 'video')
         safe = re.sub(r'[^\w\s-]', '', title)[:60].strip() or 'video'
         out_tmpl = os.path.join(dl_dir, f'{safe}.%(ext)s')
-        cmd = ['yt-dlp', '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-               '--merge-output-format', 'mp4', '-o', out_tmpl, '--no-playlist', '--no-warnings',
-               *YT_COMPAT, url]
-        r = subprocess.run(cmd, capture_output=True, text=True)
+        cmd = ['yt-dlp', '-f', YT_FORMAT,
+               '-o', out_tmpl, '--no-playlist', '--no-warnings', *YT_COMPAT, url]
+        r = subprocess.run(cmd, capture_output=True, text=True, env=yt_env)
         if r.returncode != 0:
             return jsonify({'success': False, 'error': r.stderr[-200:] if r.stderr else 'Download failed.'})
-        files = [f for f in glob.glob(os.path.join(dl_dir, f'{safe}.*')) if f.endswith('.mp4')]
+        # Accept whatever container the progressive format produced (almost always
+        # .mp4 via format 18) — PyAV reads them all downstream. Pick the newest.
+        produced = sorted(glob.glob(os.path.join(dl_dir, f'{safe}.*')),
+                          key=os.path.getmtime, reverse=True)
+        files = [f for f in produced
+                 if os.path.splitext(f)[1].lower() in ('.mp4', '.m4v', '.mov', '.webm', '.mkv')]
         if not files:
-            return jsonify({'success': False, 'error': 'No MP4 produced.'})
+            return jsonify({'success': False, 'error': 'Download produced no video file.'})
         SELECTED.append(files[0])
         return jsonify({'success': True, 'index': len(SELECTED) - 1,
                         'name': os.path.basename(files[0]), 'files': _file_list()})
