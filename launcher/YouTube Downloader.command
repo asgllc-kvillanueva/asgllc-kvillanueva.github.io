@@ -12,6 +12,14 @@ INSTALL_DIR="$HOME/Library/Application Support/Playground Tools"
 mkdir -p "$INSTALL_DIR"
 cd "$INSTALL_DIR" || exit 1
 
+# 0. Already running? If our hub is already up, just reopen it in the browser
+#    and stop here — no second copy, no "port already in use" error.
+if curl -fsS --max-time 2 "http://127.0.0.1:8765/hub-id" 2>/dev/null | grep -q "playground-tools-hub"; then
+  echo "Playground Tools is already open — bringing it back to your browser."
+  open "http://127.0.0.1:8765/"
+  exit 0
+fi
+
 # 1. Need a WORKING Python 3. Fresh Macs ship a stub that triggers Apple's
 #    Command Line Developer Tools installer the first time it runs.
 if ! python3 -c "" >/dev/null 2>&1; then

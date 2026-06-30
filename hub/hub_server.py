@@ -19,6 +19,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HUB_PORT = 8765
 
+# A stable marker the /hub-id endpoint returns, so a second launch (or the
+# launcher itself) can confirm the thing already on the port is OUR hub —
+# not some unrelated local service — before reopening the browser to it.
+HUB_MARKER = "playground-tools-hub"
+
 HERE = os.path.dirname(os.path.abspath(__file__))        # .../Playground Tools/hub
 INSTALL_DIR = os.path.dirname(HERE)                       # .../Playground Tools
 APPS_DIR = os.path.join(INSTALL_DIR, "apps")
@@ -159,6 +164,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.wfile.write(body)
             except OSError:
                 self._json(500, {"error": "landing page missing"})
+        elif self.path == "/hub-id":
+            self._json(200, {"app": HUB_MARKER})
         elif self.path.startswith("/status/"):
             aid = self.path[len("/status/"):]
             self._json(200, status.get(aid, {"state": "unknown", "message": ""}))
@@ -177,9 +184,29 @@ class Handler(BaseHTTPRequestHandler):
             self._json(404, {"error": "not found"})
 
 
+def _existing_hub_is_ours():
+    """True if something already on HUB_PORT identifies itself as our hub."""
+    import urllib.request
+    try:
+        with urllib.request.urlopen("http://127.0.0.1:%d/hub-id" % HUB_PORT, timeout=2) as r:
+            return HUB_MARKER in r.read().decode("utf-8", "replace")
+    except Exception:
+        return False
+
+
 def main():
-    httpd = ThreadingHTTPServer(("127.0.0.1", HUB_PORT), Handler)
     url = "http://127.0.0.1:%d/" % HUB_PORT
+    try:
+        httpd = ThreadingHTTPServer(("127.0.0.1", HUB_PORT), Handler)
+    except OSError:
+        # Port is taken. If it's our own hub already running, just reopen it.
+        if _existing_hub_is_ours():
+            print("Playground Tools is already open — reopened it in your browser.")
+            webbrowser.open(url)
+            return
+        print("Port %d is being used by something else, so Playground Tools" % HUB_PORT)
+        print("can't start. Close whatever is using it and try again.")
+        return
     threading.Timer(1.0, lambda: webbrowser.open(url)).start()
     print("Playground Tools is running at %s" % url)
     print("Keep this window open while you work. Close it to stop everything.")
