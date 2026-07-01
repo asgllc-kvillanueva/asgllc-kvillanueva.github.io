@@ -89,8 +89,16 @@ rm -f "$INSTALL_DIR/bin/ffmpeg" 2>/dev/null   # clear any earlier download so it
 if command -v ffmpeg >/dev/null 2>&1; then
   echo "Using the ffmpeg already on this Mac ($(command -v ffmpeg))."
 elif command -v brew >/dev/null 2>&1; then
-  echo "Installing ffmpeg with Homebrew (one time)…"
-  brew install ffmpeg
+  echo "Installing a video helper (ffmpeg) — one time only."
+  echo "This can take a minute or two. You don't need to do anything; please wait…"
+  echo
+  # HOMEBREW_NO_ASK=1 is the flag that skips Homebrew's "Do you want to proceed?
+  # [y/n]" prompt (its ask-mode is on by default) so a non-technical user isn't
+  # stuck at a Terminal question. NONINTERACTIVE covers any other prompt; the
+  # NO_AUTO_UPDATE / NO_ENV_HINTS / NO_INSTALL_CLEANUP vars silence the wall of
+  # update spam and hints that otherwise bury the one line that matters.
+  HOMEBREW_NO_ASK=1 NONINTERACTIVE=1 HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_ENV_HINTS=1 \
+    HOMEBREW_NO_INSTALL_CLEANUP=1 brew install ffmpeg
 else
   echo "Downloading ffmpeg (one time)…"
   mkdir -p "$INSTALL_DIR/bin"
