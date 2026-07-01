@@ -24,6 +24,15 @@
         </header>
 
         <main class="card">
+            <div class="mode-toggle">
+                <div class="mode-switch" id="mode-switch" data-mode="corp">
+                    <button type="button" class="mode-opt" data-mode="corp">🔒 Corp Mac</button>
+                    <button type="button" class="mode-opt" data-mode="personal">🚀 Personal Mac</button>
+                    <span class="mode-thumb"></span>
+                </div>
+                <div class="mode-info" id="mode-info"></div>
+            </div>
+
             <div class="folder-box">
                 <span class="folder-label">Saving to</span>
                 <div id="currentFolder" class="folder-path">{{ current_folder }}</div>
@@ -52,6 +61,7 @@
                         <option value="720">720p</option>
                         <option value="480">480p</option>
                     </select>
+                    <div id="quality-note" class="quality-note"></div>
                 </div>
             </div>
 

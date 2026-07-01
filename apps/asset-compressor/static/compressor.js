@@ -324,6 +324,42 @@ btnYtDownload.addEventListener('click', async () => {
     btnYtDownload.textContent = '⬇️';
 });
 
+// ─── Machine Mode (Corp vs Personal) ─────────────────────────────────────
+const modeSwitch = document.getElementById('mode-switch');
+const modeInfo = document.getElementById('mode-info');
+
+const MODE_INFO = {
+    corp: '🔒 <b>Corp Mac</b> — locked down for security software (Santa). ' +
+          'YouTube grabs are capped at <b>~360p</b> so nothing gets blocked.',
+    personal: '🚀 <b>Personal Mac</b> — full quality. Uses every tool for the ' +
+              'best resolution (<b>up to 1080p+</b>). Don\'t use on a locked-down work Mac.',
+};
+
+function applyMode(mode) {
+    if (mode !== 'corp' && mode !== 'personal') mode = 'corp';
+    modeSwitch.dataset.mode = mode;
+    modeInfo.innerHTML = MODE_INFO[mode];
+}
+
+modeSwitch.querySelectorAll('.mode-opt').forEach((opt) => {
+    opt.addEventListener('click', async () => {
+        const mode = opt.dataset.mode;
+        if (mode === modeSwitch.dataset.mode) return;
+        applyMode(mode);
+        try { await postJSON('/set-mode', { mode }); } catch (e) { /* keep UI state */ }
+    });
+});
+
+(async () => {
+    try {
+        const r = await fetch('/mode');
+        const d = await r.json();
+        applyMode(d.mode);
+    } catch (e) {
+        applyMode('corp');
+    }
+})();
+
 // ─── Output Folder ───────────────────────────────────────────────────────
 btnOutput.addEventListener('click', async () => {
     const r = await postJSON('/select-output');

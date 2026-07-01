@@ -168,6 +168,84 @@ header p {
     transform: none;
 }
 
+/* Machine mode toggle (Corp vs Personal) */
+.mode-toggle {
+    margin-bottom: 1.25rem;
+    text-align: left;
+}
+
+.mode-switch {
+    position: relative;
+    display: flex;
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid var(--card-border);
+    border-radius: 12px;
+    padding: 4px;
+}
+
+.mode-switch .mode-opt {
+    flex: 1;
+    width: auto;
+    z-index: 1;
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.55);
+    font-family: inherit;
+    font-size: 0.85rem;
+    font-weight: 600;
+    padding: 9px 8px;
+    cursor: pointer;
+    transition: color 0.25s ease;
+}
+
+.mode-switch .mode-opt:hover {
+    background: transparent;
+    transform: none;
+    color: rgba(255, 255, 255, 0.85);
+}
+
+.mode-thumb {
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    width: calc(50% - 4px);
+    height: calc(100% - 8px);
+    border-radius: 9px;
+    background: linear-gradient(135deg, #6c5ce7, #a29bfe);
+    box-shadow: 0 4px 14px rgba(108, 92, 231, 0.45);
+    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.mode-switch[data-mode="personal"] .mode-thumb {
+    transform: translateX(100%);
+}
+
+.mode-switch[data-mode="corp"] .mode-opt[data-mode="corp"],
+.mode-switch[data-mode="personal"] .mode-opt[data-mode="personal"] {
+    color: #fff;
+}
+
+.mode-info {
+    font-size: 0.78rem;
+    line-height: 1.5;
+    color: rgba(255, 255, 255, 0.55);
+    margin-top: 10px;
+    padding: 0 2px;
+}
+
+.mode-info b {
+    color: rgba(255, 255, 255, 0.9);
+    font-weight: 600;
+}
+
+.quality-note {
+    font-size: 0.72rem;
+    color: #fdcb6e;
+    margin-top: 6px;
+    padding-left: 5px;
+    min-height: 14px;
+}
+
 /* Input Field */
 .input-group {
     margin-bottom: 1.5rem;

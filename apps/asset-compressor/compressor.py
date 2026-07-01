@@ -24,17 +24,57 @@ PORT = 5002
 # Human-readable list of what you can load (shown in the UI).
 ALLOWED_DESC = "MP4, MOV, M4V, WebM, AVI, and more"
 
-# Extra yt-dlp flags for the YouTube path. The Android player client returns
-# pre-deciphered stream URLs, so when it works yt-dlp skips YouTube's JavaScript
-# "nsig" challenge entirely. (The Universal Downloader uses the same client.)
+# ── Machine mode: "corp" (locked-down, Santa-safe) vs "personal" (full quality).
+# Shared with the Universal Downloader via one settings file under Playground
+# Tools, so flipping it in either app carries over. Default is the SAFE "corp".
+_PG_DIR = os.path.join(os.path.expanduser('~'), 'Library', 'Application Support', 'Playground Tools')
+_SETTINGS_PATH = os.path.join(_PG_DIR, 'settings.json')
+
+
+def load_mode():
+    try:
+        with open(_SETTINGS_PATH) as f:
+            m = json.load(f).get('machine_mode')
+        if m in ('corp', 'personal'):
+            return m
+    except Exception:
+        pass
+    return 'corp'
+
+
+def save_mode(mode):
+    if mode not in ('corp', 'personal'):
+        return
+    data = {}
+    try:
+        with open(_SETTINGS_PATH) as f:
+            data = json.load(f)
+    except Exception:
+        pass
+    data['machine_mode'] = mode
+    try:
+        os.makedirs(_PG_DIR, exist_ok=True)
+        with open(_SETTINGS_PATH, 'w') as f:
+            json.dump(data, f)
+    except Exception as e:
+        print('Could not save machine mode:', e)
+
+
+# ── CORP mode (Santa-safe): Android client returns pre-deciphered URLs (no JS
+# "nsig" challenge → no Deno), and a single pre-muxed/progressive MP4 means no
+# ffmpeg merge. `18` (360p H.264) is virtually always present as a fallback.
 YT_COMPAT = ['--extractor-args', 'youtube:player_client=android',
              '--no-check-certificate', '--legacy-server-connect']
-
-# A single pre-muxed (progressive) MP4 — one file with both audio and video, so
-# no ffmpeg merge is ever needed. `18` (360p H.264) is virtually always present
-# as a reliable fallback.
 YT_FORMAT = ('best[ext=mp4][vcodec!=none][acodec!=none]/'
              '18/best[vcodec!=none][acodec!=none]/best')
+
+# ── PERSONAL mode (full quality): default clients + best adaptive streams merged
+# to MP4. This uses Deno (for the JS challenge) and ffmpeg (to merge) — fine on a
+# personal Mac, blocked by Santa on the corp Mac (which is why it's opt-in).
+YT_COMPAT_HQ = ['--no-check-certificate', '--legacy-server-connect']
+YT_FORMAT_HQ = ('bestvideo[ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a]/'
+                'bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/'
+                'best[ext=mp4]/best')
 
 
 def _yt_env():
@@ -244,6 +284,21 @@ def _file_list():
     return [{'index': i, 'name': os.path.basename(p)} for i, p in enumerate(SELECTED)]
 
 
+# ─── Machine mode (Corp vs Personal) ─────────────────────────────────────
+@app.route('/mode')
+def get_mode():
+    return jsonify({'mode': load_mode()})
+
+
+@app.route('/set-mode', methods=['POST'])
+def set_mode():
+    mode = (request.json or {}).get('mode')
+    if mode not in ('corp', 'personal'):
+        return jsonify({'success': False, 'error': 'bad mode'}), 400
+    save_mode(mode)
+    return jsonify({'success': True, 'mode': mode})
+
+
 # ─── YouTube download (adds one video to the list) ───────────────────────
 @app.route('/download-youtube', methods=['POST'])
 def download_youtube():
@@ -253,14 +308,21 @@ def download_youtube():
     try:
         dl_dir = os.path.join(tempfile.gettempdir(), 'asset_comp_yt')
         os.makedirs(dl_dir, exist_ok=True)
-        yt_env = _yt_env()
-        title_r = subprocess.run(['yt-dlp', '--print', 'title', '--no-warnings', *YT_COMPAT, url],
+        # Pick the toolchain by machine mode. Corp: sanitized PATH + progressive
+        # (Santa-safe, ~360p). Personal: full PATH + best adaptive merged to MP4.
+        if load_mode() == 'personal':
+            yt_env = None  # inherit full PATH so Deno/ffmpeg are available
+            flags, fmt, extra = YT_COMPAT_HQ, YT_FORMAT_HQ, ['--merge-output-format', 'mp4']
+        else:
+            yt_env = _yt_env()
+            flags, fmt, extra = YT_COMPAT, YT_FORMAT, []
+        title_r = subprocess.run(['yt-dlp', '--print', 'title', '--no-warnings', *flags, url],
                                  capture_output=True, text=True, timeout=40, env=yt_env)
         title = (title_r.stdout.strip() or 'video')
         safe = re.sub(r'[^\w\s-]', '', title)[:60].strip() or 'video'
         out_tmpl = os.path.join(dl_dir, f'{safe}.%(ext)s')
-        cmd = ['yt-dlp', '-f', YT_FORMAT,
-               '-o', out_tmpl, '--no-playlist', '--no-warnings', *YT_COMPAT, url]
+        cmd = ['yt-dlp', '-f', fmt, *extra,
+               '-o', out_tmpl, '--no-playlist', '--no-warnings', *flags, url]
         r = subprocess.run(cmd, capture_output=True, text=True, env=yt_env)
         if r.returncode != 0:
             return jsonify({'success': False, 'error': r.stderr[-200:] if r.stderr else 'Download failed.'})

@@ -38,6 +38,49 @@ def save_settings(settings):
     except Exception as e:
         print(f"Could not save settings: {e}")
 
+# ── Machine mode: "corp" (locked-down, Santa-safe) vs "personal" (full quality).
+# Shared with the Asset Compressor via one settings file under Playground Tools,
+# so flipping it in either app carries over. Default is the SAFE "corp".
+_PG_DIR = os.path.join(os.path.expanduser('~'), 'Library', 'Application Support', 'Playground Tools')
+_MODE_SETTINGS = os.path.join(_PG_DIR, 'settings.json')
+
+def load_mode():
+    try:
+        with open(_MODE_SETTINGS) as f:
+            m = json.load(f).get('machine_mode')
+        if m in ('corp', 'personal'):
+            return m
+    except Exception:
+        pass
+    return 'corp'
+
+def save_mode(mode):
+    if mode not in ('corp', 'personal'):
+        return
+    data = {}
+    try:
+        with open(_MODE_SETTINGS) as f:
+            data = json.load(f)
+    except Exception:
+        pass
+    data['machine_mode'] = mode
+    try:
+        os.makedirs(_PG_DIR, exist_ok=True)
+        with open(_MODE_SETTINGS, 'w') as f:
+            json.dump(data, f)
+    except Exception as e:
+        print(f"Could not save machine mode: {e}")
+
+# Corp mode: a single pre-muxed/progressive MP4 (no ffmpeg merge) — `18` (360p)
+# is the reliable fallback that's virtually always present.
+CORP_VIDEO_FORMAT = ('best[ext=mp4][vcodec!=none][acodec!=none]/'
+                     '18/best[vcodec!=none][acodec!=none]/best')
+
+def _sanitized_path():
+    """PATH with Homebrew/usr-local removed so yt-dlp can't spawn the Santa-blocked
+    Deno (JS challenge) or ffmpeg (merge) on the corp Mac — it degrades gracefully."""
+    return os.pathsep.join([os.path.dirname(sys.executable), '/usr/bin', '/bin', '/usr/sbin', '/sbin'])
+
 # Apply loaded settings
 HOME = os.path.expanduser('~')
 user_settings = load_settings()
@@ -91,6 +134,18 @@ def change_folder():
         return jsonify({'success': True, 'path': DOWNLOAD_FOLDER})
     return jsonify({'success': False, 'path': DOWNLOAD_FOLDER})
 
+@app.route('/mode')
+def get_mode():
+    return jsonify({'mode': load_mode()})
+
+@app.route('/set-mode', methods=['POST'])
+def set_mode():
+    mode = (request.json or {}).get('mode')
+    if mode not in ('corp', 'personal'):
+        return jsonify({'success': False, 'error': 'bad mode'}), 400
+    save_mode(mode)
+    return jsonify({'success': True, 'mode': mode})
+
 @app.route('/shutdown', methods=['POST'])
 def shutdown():
     """Shuts down the Flask server"""
@@ -112,13 +167,14 @@ def process_download(job_id, urls, media_type, media_quality, download_folder):
             filename = os.path.basename(d.get('filename', 'Unknown'))
             q.put({'type': 'progress', 'percent': f'{percent:.1f}', 'filename': filename})
 
+    mode = load_mode()  # 'corp' = Santa-safe / ~360p, 'personal' = full quality
+
     # Options base
     ydl_opts_base = {
         'noplaylist': True,
         'quiet': True,
         'no_warnings': True,
         'progress_hooks': [my_hook],
-        'ffmpeg_location': FFMPEG_PATH,
         # Bypass 403 Forbidden errors (YouTube anti-bot countermeasures)
         'nocheckcertificate': True,
         'legacyserverconnect': True,
@@ -128,45 +184,58 @@ def process_download(job_id, urls, media_type, media_quality, download_folder):
             'Accept-Language': 'en-us,en;q=0.5',
             'Sec-Fetch-Mode': 'navigate',
         },
-        # Use Android client to bypass YouTube's PO Token / SABR restrictions on corporate networks
-        'extractor_args': {'youtube': {'player_client': ['android']}},
     }
+
+    if mode == 'corp':
+        # Android client returns pre-deciphered URLs (no Deno JS challenge), and
+        # we never merge — so no blocked binary is ever spawned on the corp Mac.
+        ydl_opts_base['extractor_args'] = {'youtube': {'player_client': ['android']}}
+    else:
+        # Full quality: let yt-dlp use its default clients and the real ffmpeg.
+        ydl_opts_base['ffmpeg_location'] = FFMPEG_PATH
 
     # Configure yt-dlp based on user selection
     if media_type == 'audio':
         ydl_opts_base['format'] = 'bestaudio/best'
-        ydl_opts_base['postprocessors'] = [{
-            'key': 'FFmpegExtractAudio',
-            'preferredcodec': 'mp3',
-            'preferredquality': '192',
-        }]
+        if mode == 'personal':
+            # Convert to MP3 (needs ffmpeg). Corp mode keeps the native audio
+            # container (usually .m4a) so no blocked binary is ever run.
+            ydl_opts_base['postprocessors'] = [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'mp3',
+                'preferredquality': '192',
+            }]
     else:
         # Video / Video + Transcript.
         # Prefer H.264 mp4 (best QuickTime compatibility) and YouTube-style separate
         # streams, then fall back to combined single-file sources like TikTok and
         # Instagram, which serve one progressive file rather than split streams.
-        if media_quality in ('1080', '720', '480'):
-            h = media_quality
-            ydl_opts_base['format'] = (
-                f'bestvideo[height<={h}][ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a]/'
-                f'bestvideo[height<={h}][ext=mp4]+bestaudio[ext=m4a]/'
-                f'bestvideo[height<={h}]+bestaudio/'
-                f'best[height<={h}][ext=mp4]/best[height<={h}]/best'
-            )
+        if mode == 'corp':
+            # Progressive only — no merge, so no ffmpeg. Caps at ~360p; the quality
+            # dropdown can't raise this on a locked-down Mac.
+            ydl_opts_base['format'] = CORP_VIDEO_FORMAT
         else:
-            ydl_opts_base['format'] = (
-                'bestvideo[ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a]/'
-                'bestvideo[ext=mp4]+bestaudio[ext=m4a]/'
-                'bestvideo+bestaudio/'
-                'best[ext=mp4]/best'
-            )
+            if media_quality in ('1080', '720', '480'):
+                h = media_quality
+                ydl_opts_base['format'] = (
+                    f'bestvideo[height<={h}][ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a]/'
+                    f'bestvideo[height<={h}][ext=mp4]+bestaudio[ext=m4a]/'
+                    f'bestvideo[height<={h}]+bestaudio/'
+                    f'best[height<={h}][ext=mp4]/best[height<={h}]/best'
+                )
+            else:
+                ydl_opts_base['format'] = (
+                    'bestvideo[ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a]/'
+                    'bestvideo[ext=mp4]+bestaudio[ext=m4a]/'
+                    'bestvideo+bestaudio/'
+                    'best[ext=mp4]/best'
+                )
+            ydl_opts_base['merge_output_format'] = 'mp4'
+            ydl_opts_base['postprocessors'] = [{
+                'key': 'FFmpegVideoConvertor',
+                'preferedformat': 'mp4',
+            }]
 
-        ydl_opts_base['merge_output_format'] = 'mp4'
-        ydl_opts_base['postprocessors'] = [{
-            'key': 'FFmpegVideoConvertor',
-            'preferedformat': 'mp4',
-        }]
-        
         if media_type == 'video_transcript':
             ydl_opts_base['writesubtitles'] = True
             ydl_opts_base['writeautomaticsub'] = True
@@ -176,18 +245,26 @@ def process_download(job_id, urls, media_type, media_quality, download_folder):
             ydl_opts_base['writesubtitles'] = False
             ydl_opts_base['writeautomaticsub'] = False
 
-    for url in urls:
-        try:
-            current_opts = ydl_opts_base.copy()
-            current_opts['outtmpl'] = os.path.join(download_folder, '%(title)s.%(ext)s')
+    # In corp mode, hide Deno/ffmpeg from yt-dlp's child processes for the duration
+    # of the download so Santa never sees a blocked binary launched. Restored after.
+    saved_path = os.environ.get('PATH', '')
+    if mode == 'corp':
+        os.environ['PATH'] = _sanitized_path()
+    try:
+        for url in urls:
+            try:
+                current_opts = ydl_opts_base.copy()
+                current_opts['outtmpl'] = os.path.join(download_folder, '%(title)s.%(ext)s')
 
-            with yt_dlp.YoutubeDL(current_opts) as ydl:
-                q.put({'type': 'starting', 'url': url})
-                info = ydl.extract_info(url, download=True)
-                title = info.get('title', 'Video')
-                q.put({'type': 'success', 'title': title, 'url': url})
-        except Exception as e:
-            q.put({'type': 'error', 'error': str(e), 'url': url})
+                with yt_dlp.YoutubeDL(current_opts) as ydl:
+                    q.put({'type': 'starting', 'url': url})
+                    info = ydl.extract_info(url, download=True)
+                    title = info.get('title', 'Video')
+                    q.put({'type': 'success', 'title': title, 'url': url})
+            except Exception as e:
+                q.put({'type': 'error', 'error': str(e), 'url': url})
+    finally:
+        os.environ['PATH'] = saved_path
 
     q.put({'type': 'complete'})
 

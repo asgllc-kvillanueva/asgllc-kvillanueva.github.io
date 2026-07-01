@@ -205,6 +205,74 @@ body {
     word-break: break-all;
 }
 
+/* Machine mode toggle (Corp vs Personal) */
+.mode-toggle {
+    margin-top: 12px;
+}
+
+.mode-switch {
+    position: relative;
+    display: flex;
+    background-color: var(--bg-dark);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 3px;
+}
+
+.mode-opt {
+    flex: 1;
+    width: auto;
+    z-index: 1;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 7px 6px;
+    cursor: pointer;
+    transition: color 0.25s ease;
+}
+
+.mode-opt:hover:not(:disabled) {
+    color: var(--text-main);
+}
+
+.mode-thumb {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: calc(50% - 3px);
+    height: calc(100% - 6px);
+    border-radius: calc(var(--radius-md) - 2px);
+    background: linear-gradient(135deg, #818cf8, #c084fc);
+    box-shadow: 0 2px 8px rgba(99, 102, 241, 0.35);
+    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Slide the thumb + highlight the active label based on data-mode */
+.mode-switch[data-mode="personal"] .mode-thumb {
+    transform: translateX(100%);
+}
+
+.mode-switch[data-mode="corp"] .mode-opt[data-mode="corp"],
+.mode-switch[data-mode="personal"] .mode-opt[data-mode="personal"] {
+    color: #fff;
+}
+
+.mode-info {
+    font-size: 11px;
+    line-height: 1.45;
+    color: var(--text-muted);
+    margin-top: 8px;
+    padding-left: 2px;
+}
+
+.mode-info b {
+    color: var(--text-main);
+    font-weight: 600;
+}
+
 .input-row {
     display: flex;
     align-items: center;

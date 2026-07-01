@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "asset-compressor",
+      "runtimeExecutable": "apps/asset-compressor/.venv/bin/python",
+      "runtimeArgs": ["apps/asset-compressor/compressor.py"],
+      "port": 5002
+    },
+    {
+      "name": "universal-downloader",
+      "runtimeExecutable": "apps/universal-downloader/.venv/bin/python",
+      "runtimeArgs": ["apps/universal-downloader/downloader.py"],
+      "port": 5001
+    }
+  ]
+}

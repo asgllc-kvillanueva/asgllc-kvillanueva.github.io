@@ -144,6 +144,50 @@ function showStatus(message, type) {
     }
 }
 
+// ─── Machine Mode (Corp vs Personal) ─────────────────────────────────────
+const modeSwitch = document.getElementById('mode-switch');
+const modeInfo = document.getElementById('mode-info');
+const qualityNote = document.getElementById('quality-note');
+
+const MODE_INFO = {
+    corp: '🔒 <b>Corp Mac</b> — locked down for security software (Santa). ' +
+          'Downloads are capped at <b>~360p</b> (audio stays in its original format) so nothing gets blocked.',
+    personal: '🚀 <b>Personal Mac</b> — full quality: best resolution up to <b>1080p+</b> and MP3 audio. ' +
+              'Don\'t use on a locked-down work Mac.',
+};
+
+function applyMode(mode) {
+    if (mode !== 'corp' && mode !== 'personal') mode = 'corp';
+    modeSwitch.dataset.mode = mode;
+    modeInfo.innerHTML = MODE_INFO[mode];
+    qualityNote.textContent = mode === 'corp' ? 'Limited to ~360p in Corp Mac mode' : '';
+}
+
+modeSwitch.querySelectorAll('.mode-opt').forEach((opt) => {
+    opt.addEventListener('click', async () => {
+        const mode = opt.dataset.mode;
+        if (mode === modeSwitch.dataset.mode) return;
+        applyMode(mode);
+        try {
+            await fetch('/set-mode', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mode }),
+            });
+        } catch (e) { /* keep the UI state regardless */ }
+    });
+});
+
+(async () => {
+    try {
+        const r = await fetch('/mode');
+        const d = await r.json();
+        applyMode(d.mode);
+    } catch (e) {
+        applyMode('corp');
+    }
+})();
+
 async function quitBackend() {
     if (confirm("Are you sure you want to stop the downloader server? You will need to restart the app to download again.")) {
         try {
