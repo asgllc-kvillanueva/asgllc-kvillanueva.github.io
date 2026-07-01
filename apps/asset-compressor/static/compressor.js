@@ -405,8 +405,12 @@ btnPlayPause.addEventListener('click', () => {
 function getNativeCrop() {
     if (!inputFile || videoNativeWidth === 0) return { x: 0, y: 0, w: 0, h: 0 };
     const s = state.scale;
-    let nH = Math.round(targetH / s);
-    let nW = Math.round(targetW / s);
+    // Crop the region ACTUALLY visible in the viewport. Use the on-screen crop-box
+    // size (containerDisplayW/H), not the raw target W/H: when the target is taller
+    // than the 540px display cap, the box is scaled down, so target/s would crop a
+    // larger, offset region than what the user sees. (Bug: Static preset / portrait.)
+    let nH = Math.round(containerDisplayH / s);
+    let nW = Math.round(containerDisplayW / s);
     nH = Math.min(nH, videoNativeHeight);
     nW = Math.min(nW, videoNativeWidth);
     nW -= nW % 2;
